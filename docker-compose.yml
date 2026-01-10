@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Optional: Use this if you want Docker to run PostgreSQL
+  # Otherwise, comment this out and use your local PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: sbeamp_postgres
+    environment:
+      POSTGRES_DB: sbeampdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sbeampdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Uncomment the line below to use your local PostgreSQL instead
+    # profiles: ["dont-use"]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sbeamp_backend
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      # Connect to local PostgreSQL (host.docker.internal for Mac/Windows, or use your machine's IP)
+      DB_HOST: host.docker.internal
+      DB_PORT: 5432
+      DB_NAME: sbeampdb
+      DB_USER: postgres
+      DB_PASSWORD: admin
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
+      JWT_EXPIRES_IN: 7d
+      FRONTEND_URL: "*"
+      ADMIN_EMAIL: admin@ampcus.com
+      ADMIN_PASSWORD: Admin#456789
+      ADMIN_NAME: Admin User
+    ports:
+      - "5000:5000"
+    # Remove depends_on if using local PostgreSQL
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npm run migrate && npm run create-admin && npm run dev"
+    # For Linux, use network_mode: "host" instead of host.docker.internal
+    # network_mode: "host"
+
+volumes:
+  postgres_data:

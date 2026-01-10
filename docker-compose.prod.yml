@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sbeamp_postgres
+    environment:
+      POSTGRES_DB: sbeamp_db
+      POSTGRES_USER: sbeamp_user
+      POSTGRES_PASSWORD: sbeamp_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sbeamp_user -d sbeamp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sbeamp_backend
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: sbeamp_db
+      DB_USER: sbeamp_user
+      DB_PASSWORD: sbeamp_password
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
+      JWT_EXPIRES_IN: 7d
+      FRONTEND_URL: https://sbeamp.ampcustech.info
+      ADMIN_EMAIL: admin@ampcus.com
+      ADMIN_PASSWORD: Admin#456789
+      ADMIN_NAME: Admin User
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run init-db && npm start"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
