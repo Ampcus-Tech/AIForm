@@ -50,8 +50,10 @@ function QuestionInput({ question, value, onChange, formData }) {
                   onChange={onChange}
                   required={isRequired}
                 />
-                <span className="scale-number">{num}</span>
-                {label && <span className="scale-label">{label}</span>}
+                <div className="scale-option-content">
+                  <span className="scale-number">{num}</span>
+                  {label && <span className="scale-label">{label}</span>}
+                </div>
               </label>
             )
           })}

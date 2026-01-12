@@ -75,39 +75,78 @@ header h1 {
 
 .scale-options {
     display: flex;
-    gap: 20px;
+    gap: 12px;
     flex-wrap: wrap;
-    margin-top: 10px;
+    margin-top: 15px;
+    justify-content: flex-start;
 }
 
-.scale-options label {
+.scale-options label.scale-option {
     display: flex;
     align-items: center;
-    gap: 5px;
     cursor: pointer;
-    padding: 8px 15px;
-    border: 2px solid #ddd;
-    border-radius: 6px;
-    transition: all 0.3s;
+    padding: 12px 18px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    transition: all 0.3s ease;
     font-weight: 500;
+    background: white;
+    min-width: 120px;
+    position: relative;
 }
 
-.scale-options label:hover {
+.scale-options label.scale-option:hover {
     border-color: #667eea;
     background-color: #f8f9ff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2);
 }
 
-.scale-options input[type="radio"]:checked + span,
-.scale-options input[type="radio"]:checked {
+.scale-options label.scale-option.selected {
     border-color: #667eea;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .scale-options input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
     margin: 0;
     cursor: pointer;
-    width: 18px;
-    height: 18px;
-    accent-color: #667eea;
+}
+
+.scale-option-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.scale-number {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #667eea;
+    line-height: 1;
+}
+
+.scale-options label.scale-option.selected .scale-number {
+    color: white;
+}
+
+.scale-label {
+    font-size: 0.85em;
+    color: #666;
+    text-align: center;
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.scale-options label.scale-option.selected .scale-label {
+    color: rgba(255, 255, 255, 0.95);
 }
 
 .radio-options {
@@ -287,12 +326,24 @@ input[type="email"]:focus {
     }
 
     .scale-options {
-        gap: 10px;
+        gap: 8px;
+        justify-content: center;
     }
 
-    .scale-options label {
-        padding: 6px 12px;
+    .scale-options label.scale-option {
+        padding: 10px 14px;
         font-size: 0.9em;
+        min-width: 100px;
+        flex: 1;
+        max-width: 150px;
+    }
+
+    .scale-number {
+        font-size: 1.2em;
+    }
+
+    .scale-label {
+        font-size: 0.8em;
     }
 
     .yes-no-group {

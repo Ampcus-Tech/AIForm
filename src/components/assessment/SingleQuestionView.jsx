@@ -46,12 +46,13 @@ function SingleQuestionView({
 
       {/* Show child questions if parent is yes_no and answered "yes" */}
       {question.questionType === 'yes_no' && 
-       (currentAnswer === 'yes' || currentAnswer === 'Yes' || currentAnswer === '1') &&
+       (String(currentAnswer || '').toLowerCase().trim() === 'yes' || String(currentAnswer || '').trim() === '1' || String(currentAnswer || '').toLowerCase().trim() === 'true') &&
        question.children && 
        question.children.length > 0 && (
         <div style={{ marginTop: '20px', paddingLeft: '20px', borderLeft: '4px solid #667eea' }}>
           {question.children.map((child, childIndex) => {
-            const childAnswerKey = child.questionCode || `q_${child.id}`
+            // Use answerKey from child if available (sequential number), otherwise fallback
+            const childAnswerKey = child.answerKey || child.questionCode || `q_${child.id}`
             return (
               <div key={childAnswerKey} className="question-group" style={{ marginBottom: '20px' }}>
                 <label className="question-label">

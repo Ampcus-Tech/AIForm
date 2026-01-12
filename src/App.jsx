@@ -2,11 +2,14 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import Login from './components/Login'
-import Assessment from './components/Assessment'
+import Assessment from './pages/Assessment'
 import AdminDashboard from './components/AdminDashboard'
 import AdminRoute from './components/AdminRoute'
 
+console.log('🚀 App.jsx loaded - importing Assessment from ./pages/Assessment')
+
 function App() {
+  console.log('🚀 App component rendering')
   return (
     <AuthProvider>
       <BrowserRouter>

@@ -93,7 +93,7 @@
 }
 
 .admin-tabs button {
-  flex: 1;
+  flex: 0 1 auto; /* Changed from flex: 1 to allow natural sizing */
   padding: 16px 20px;
   border: none;
   background: transparent;
@@ -103,6 +103,8 @@
   font-size: 1em;
   color: #666;
   transition: all 0.3s;
+  min-width: fit-content; /* Ensure buttons don't shrink too much */
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
 .admin-tabs button:hover {
@@ -658,6 +660,54 @@
 
 .question-item strong {
   color: #667eea;
+  margin-right: 8px;
+}
+
+/* Answers List - Clean vertical layout */
+.answers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.answer-item {
+  padding: 18px;
+  background: white;
+  border-radius: 10px;
+  border-left: 4px solid #667eea;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s;
+}
+
+.answer-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateX(4px);
+}
+
+.answer-item .question-text {
+  margin-bottom: 12px;
+  font-size: 1.05em;
+  color: #333;
+  line-height: 1.5;
+}
+
+.answer-item .question-text strong {
+  color: #667eea;
+  margin-right: 8px;
+  font-size: 1.1em;
+}
+
+.answer-item .answer-value {
+  padding: 12px;
+  background: #f8f9ff;
+  border-radius: 8px;
+  color: #555;
+  line-height: 1.6;
+}
+
+.answer-item .answer-label {
+  color: #667eea;
+  font-weight: 600;
   margin-right: 8px;
 }
 

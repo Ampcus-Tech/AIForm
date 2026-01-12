@@ -15,7 +15,8 @@ import '../components/admin/AdminDashboard.css'
 function AdminDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('stats')
+  const [activeTab, setActiveTab] = useState('form-builder')
+  const [formBuilderTab, setFormBuilderTab] = useState('assessment-type') // 'assessment-type', 'category', 'question'
   const [stats, setStats] = useState(null)
   const [users, setUsers] = useState([])
   const [assessments, setAssessments] = useState([])
@@ -47,6 +48,13 @@ function AdminDashboard() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(10)
 
+  // Log on initial mount
+  useEffect(() => {
+    console.log('🚀 AdminDashboard component loaded!')
+    console.log('🚀 Default activeTab:', 'form-builder')
+    console.log('🚀 If you see this in console, the latest code is running!')
+  }, [])
+
   useEffect(() => {
     // Load data when tab changes
     loadData()
@@ -54,6 +62,14 @@ function AdminDashboard() {
     // Cleanup: Clear error when switching tabs
     return () => {
       setError('')
+    }
+  }, [activeTab])
+
+  // Debug: Log when component mounts and tab changes
+  useEffect(() => {
+    console.log('🎯 AdminDashboard activeTab changed to:', activeTab)
+    if (activeTab === 'form-builder') {
+      console.log('✅ Form Builder tab is ACTIVE!')
     }
   }, [activeTab])
 
@@ -184,6 +200,49 @@ function AdminDashboard() {
             setFilteredAssessments([])
           }
         }
+      } else if (activeTab === 'form-builder') {
+        // Load all data needed for Form Builder
+        console.log('🛠️ Loading Form Builder data...')
+        
+        // Load assessment types
+        const assessmentTypesResponse = await adminAPI.getAllAssessmentTypes()
+        if (assessmentTypesResponse && assessmentTypesResponse.success && Array.isArray(assessmentTypesResponse.assessmentTypes)) {
+          setAssessmentTypes(assessmentTypesResponse.assessmentTypes)
+        }
+        
+        // Load categories
+        const categoriesResponse = await adminAPI.getAllCategories()
+        if (categoriesResponse && categoriesResponse.success && Array.isArray(categoriesResponse.categories)) {
+          setCategories(categoriesResponse.categories)
+        }
+        
+        // Load questions
+        const questionsResponse = await adminAPI.getAllQuestions()
+        if (questionsResponse && questionsResponse.success && Array.isArray(questionsResponse.categories)) {
+          setQuestions(questionsResponse.categories)
+          // Create a map of questionCode to question for easy lookup
+          const questionsMap = {}
+          questionsResponse.categories.forEach(category => {
+            if (category.questions && Array.isArray(category.questions)) {
+              category.questions.forEach(q => {
+                if (q.questionCode) {
+                  questionsMap[q.questionCode] = { ...q, categoryName: category.name, categoryId: category.id }
+                  // Also add children to map
+                  if (q.children && Array.isArray(q.children)) {
+                    q.children.forEach(child => {
+                      if (child.questionCode) {
+                        questionsMap[child.questionCode] = { ...child, categoryName: category.name, categoryId: category.id, parentCode: q.questionCode }
+                      }
+                    })
+                  }
+                }
+              })
+            }
+          })
+          setAllQuestionsMap(questionsMap)
+        }
+        
+        console.log('✅ Form Builder data loaded')
       } else if (activeTab === 'categories') {
         const response = await adminAPI.getAllCategories()
         if (response && response.success && Array.isArray(response.categories)) {
@@ -361,12 +420,22 @@ function AdminDashboard() {
 
   const handleViewAssessment = async (id) => {
     try {
+      console.log('🔍 Opening assessment details for ID:', id)
       // Fetch assessment with detailed format to get all answers
       const response = await adminAPI.getAssessmentById(id, 'detailed')
-      console.log('Assessment API response (detailed):', response)
+      console.log('📥 Assessment API response (detailed):', response)
+      console.log('📦 Response structure:', {
+        success: response.success,
+        hasAssessment: !!response.assessment,
+        assessmentKeys: response.assessment ? Object.keys(response.assessment) : [],
+        hasDynamicAnswers: !!response.assessment?.dynamicAnswers,
+        dynamicAnswersLength: response.assessment?.dynamicAnswers?.length || 0,
+        sampleDynamicAnswer: response.assessment?.dynamicAnswers?.[0]
+      })
       
       if (response.success) {
-        console.log('Assessment data received:', response.assessment)
+        console.log('✅ Assessment data received:', response.assessment)
+        console.log('📋 Dynamic Answers:', response.assessment.dynamicAnswers)
         setSelectedAssessment(response.assessment)
       } else {
         // Fallback: try without format
@@ -684,6 +753,29 @@ function AdminDashboard() {
 
   return (
     <div className="admin-container">
+      {/* DEBUG: Force render check */}
+      {console.log('🎯 AdminDashboard rendering - activeTab:', activeTab, 'assessmentTypes:', assessmentTypes.length) || null}
+      
+      {/* VERY VISIBLE FLOATING BANNER */}
+      <div style={{
+        position: 'fixed',
+        top: '10px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)',
+        color: 'white',
+        padding: '15px 30px',
+        borderRadius: '10px',
+        zIndex: 10000,
+        boxShadow: '0 8px 25px rgba(255, 0, 0, 0.8)',
+        fontWeight: 'bold',
+        fontSize: '1.1em',
+        textAlign: 'center',
+        border: '3px solid white'
+      }}>
+        🚨 FORM BUILDER TAB SHOULD BE FIRST BUTTON BELOW! 🚨
+      </div>
+      
       <div className="admin-header">
         <div className="admin-header-info">
           <h1>📊 SBEAMP Admin Dashboard</h1>
@@ -706,10 +798,92 @@ function AdminDashboard() {
         </div>
       </div>
 
-      <div className="admin-tabs">
+      {/* DEBUG: Show tab count */}
+      {console.log('🔍 Rendering tabs - activeTab:', activeTab, 'assessmentTypes.length:', assessmentTypes.length, 'categories.length:', categories.length, 'questions.length:', questions.length) || null}
+      
+      {/* DEBUG: Tab visibility check */}
+      <div style={{ 
+        padding: '10px', 
+        background: '#fff3cd', 
+        marginBottom: '10px', 
+        borderRadius: '8px',
+        fontSize: '0.9em',
+        border: '1px solid #ffc107'
+      }}>
+        <strong>🔍 Tab Visibility Debug:</strong> Categories: {categories.length}, Questions: {questions.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0)}, Assessment Types: {assessmentTypes.length}
+      </div>
+      
+      <div className="admin-tabs" style={{ 
+        display: 'flex', 
+        gap: '10px', 
+        marginBottom: '20px', 
+        borderBottom: '2px solid #e0e0e0', 
+        paddingBottom: '10px', 
+        flexWrap: 'wrap',
+        position: 'relative',
+        zIndex: 10,
+        backgroundColor: '#f9fafb', // Light background to make tabs visible
+        padding: '15px',
+        borderRadius: '8px',
+        minHeight: '60px', // Ensure enough height
+        alignItems: 'center' // Center align items
+      }}>
+        {/* FORM BUILDER TAB - MUST BE FIRST */}
+        <button
+          key="form-builder-tab"
+          className={activeTab === 'form-builder' ? 'active' : ''}
+          onClick={() => {
+            console.log('🛠️ Form Builder tab clicked!')
+            setActiveTab('form-builder')
+          }}
+          style={{ 
+            padding: '18px 35px',
+            border: '4px solid #667eea',
+            borderRadius: '12px',
+            background: activeTab === 'form-builder' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#ffffff',
+            color: activeTab === 'form-builder' ? 'white' : '#667eea',
+            fontWeight: '800',
+            cursor: 'pointer',
+            fontSize: '1.2em',
+            transition: 'all 0.3s ease',
+            boxShadow: activeTab === 'form-builder' ? '0 8px 16px rgba(102, 126, 234, 0.5)' : '0 4px 8px rgba(0,0,0,0.15)',
+            order: -1, // Make it appear first
+            transform: activeTab === 'form-builder' ? 'scale(1.08)' : 'scale(1)',
+            position: 'relative',
+            zIndex: 1000,
+            textTransform: 'uppercase',
+            letterSpacing: '1px',
+            animation: activeTab !== 'form-builder' ? 'pulse 2s infinite' : 'none',
+            display: 'block', // Force display
+            visibility: 'visible', // Force visibility
+            opacity: 1 // Force opacity
+          }}
+        >
+          🛠️ FORM BUILDER
+        </button>
+        <style>{`
+          @keyframes pulse {
+            0%, 100% { box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3); }
+            50% { box-shadow: 0 8px 16px rgba(102, 126, 234, 0.6); }
+          }
+        `}</style>
         <button
           className={activeTab === 'stats' ? 'active' : ''}
           onClick={() => setActiveTab('stats')}
+          style={{
+            padding: '12px 24px',
+            border: '2px solid #e0e0e0',
+            borderRadius: '8px',
+            background: activeTab === 'stats' ? '#667eea' : '#ffffff',
+            color: activeTab === 'stats' ? 'white' : '#333',
+            cursor: 'pointer',
+            fontWeight: activeTab === 'stats' ? '600' : '400',
+            fontSize: '1em',
+            transition: 'all 0.2s',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1
+          }}
         >
           📈 Statistics
         </button>
@@ -717,6 +891,20 @@ function AdminDashboard() {
           <button
             className={activeTab === 'users' ? 'active' : ''}
             onClick={() => setActiveTab('users')}
+            style={{
+              padding: '12px 24px',
+              border: '2px solid #e0e0e0',
+              borderRadius: '8px',
+              background: activeTab === 'users' ? '#667eea' : '#ffffff',
+              color: activeTab === 'users' ? 'white' : '#333',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'users' ? '600' : '400',
+              fontSize: '1em',
+              transition: 'all 0.2s',
+              display: 'block',
+              visibility: 'visible',
+              opacity: 1
+            }}
           >
             👥 Users ({users.length || 0})
           </button>
@@ -724,39 +912,548 @@ function AdminDashboard() {
         <button
           className={activeTab === 'assessments' ? 'active' : ''}
           onClick={() => setActiveTab('assessments')}
+          style={{
+            padding: '12px 24px',
+            border: '2px solid #e0e0e0',
+            borderRadius: '8px',
+            background: activeTab === 'assessments' ? '#667eea' : '#ffffff',
+            color: activeTab === 'assessments' ? 'white' : '#333',
+            cursor: 'pointer',
+            fontWeight: activeTab === 'assessments' ? '600' : '400',
+            fontSize: '1em',
+            transition: 'all 0.2s',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1
+          }}
         >
           📋 Assessments ({assessments.length || 0})
         </button>
         <button
           className={activeTab === 'categories' ? 'active' : ''}
-          onClick={() => setActiveTab('categories')}
+          onClick={() => {
+            console.log('📁 Categories tab clicked!')
+            setActiveTab('categories')
+          }}
+          style={{
+            padding: '12px 24px',
+            border: '2px solid #e0e0e0',
+            borderRadius: '8px',
+            background: activeTab === 'categories' ? '#667eea' : '#ffffff',
+            color: activeTab === 'categories' ? 'white' : '#333',
+            cursor: 'pointer',
+            fontWeight: activeTab === 'categories' ? '600' : '400',
+            fontSize: '1em',
+            transition: 'all 0.2s',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1
+          }}
         >
           📁 Categories ({categories.length || 0})
         </button>
         <button
           className={activeTab === 'questions' ? 'active' : ''}
-          onClick={() => setActiveTab('questions')}
+          onClick={() => {
+            console.log('❓ Questions tab clicked!')
+            setActiveTab('questions')
+          }}
+          style={{
+            padding: '12px 24px',
+            border: '2px solid #e0e0e0',
+            borderRadius: '8px',
+            background: activeTab === 'questions' ? '#667eea' : '#ffffff',
+            color: activeTab === 'questions' ? 'white' : '#333',
+            cursor: 'pointer',
+            fontWeight: activeTab === 'questions' ? '600' : '400',
+            fontSize: '1em',
+            transition: 'all 0.2s',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1
+          }}
         >
           ❓ Questions ({questions.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0) || 0})
         </button>
         <button
           className={activeTab === 'assessment-types' ? 'active' : ''}
-          onClick={() => setActiveTab('assessment-types')}
+          onClick={() => {
+            console.log('📑 Assessment Types tab clicked!')
+            setActiveTab('assessment-types')
+          }}
+          style={{
+            padding: '12px 24px',
+            border: '2px solid #e0e0e0',
+            borderRadius: '8px',
+            background: activeTab === 'assessment-types' ? '#667eea' : '#ffffff',
+            color: activeTab === 'assessment-types' ? 'white' : '#333',
+            cursor: 'pointer',
+            fontWeight: activeTab === 'assessment-types' ? '600' : '400',
+            fontSize: '1em',
+            transition: 'all 0.2s',
+            display: 'block',
+            visibility: 'visible',
+            opacity: 1
+          }}
         >
           📑 Assessment Types ({assessmentTypes.length || 0})
         </button>
       </div>
 
       <div className="admin-content">
+        {/* VERY VISIBLE RED BANNER TO CONFIRM LATEST CODE IS LOADING */}
+        <div style={{
+          background: 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)',
+          color: 'white',
+          padding: '30px',
+          textAlign: 'center',
+          fontWeight: 'bold',
+          marginBottom: '30px',
+          fontSize: '1.8em',
+          borderRadius: '15px',
+          boxShadow: '0 8px 25px rgba(255, 0, 0, 0.6)',
+          border: '5px solid #fff',
+          animation: 'blink 1s infinite',
+          position: 'relative',
+          zIndex: 1000
+        }}>
+          🚨 FORM BUILDER TAB IS HERE! 🚨<br/>
+          <span style={{ fontSize: '0.7em', opacity: 1, display: 'block', marginTop: '15px', fontWeight: 'normal' }}>
+            Look for the "🛠️ FORM BUILDER" button in the tabs above. If you don't see it, clear cache (Cmd+Shift+R)!
+          </span>
+        </div>
+        <style>{`
+          @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+          }
+        `}</style>
+
         {error && <div className="error-message">❌ {error}</div>}
 
-        {loading ? (
+        {loading && activeTab !== 'form-builder' ? (
           <div className="loading">
             <div className="spinner"></div>
             <p>Loading data...</p>
           </div>
         ) : (
           <>
+            {/* Form Builder Tab - Main Form Creation Interface */}
+            {activeTab === 'form-builder' && (
+              <div className="form-builder-section">
+                {/* Very visible banner */}
+                <div style={{
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  padding: '20px',
+                  borderRadius: '10px',
+                  marginBottom: '30px',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                  textAlign: 'center'
+                }}>
+                  <h1 style={{ margin: '0 0 10px 0', fontSize: '2em' }}>🛠️ FORM BUILDER</h1>
+                  <p style={{ margin: 0, fontSize: '1.2em', opacity: 0.9 }}>
+                    Create Dynamic Forms - No Need for Google Forms!
+                  </p>
+                </div>
+                
+                <div className="form-builder-header">
+                  <h2>🛠️ Form Builder - Create Dynamic Forms</h2>
+                  <p style={{ color: '#666', marginTop: '10px' }}>
+                    Build custom forms with questions, categories, and options - No need for Google Forms!
+                  </p>
+                </div>
+
+                {/* Form Builder Sub-tabs - THREE MAIN OPTIONS */}
+                <div className="form-builder-tabs" style={{ 
+                  display: 'flex', 
+                  gap: '15px', 
+                  marginTop: '30px',
+                  marginBottom: '30px',
+                  borderBottom: '3px solid #667eea',
+                  paddingBottom: '15px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center'
+                }}>
+                  <button
+                    className={formBuilderTab === 'assessment-type' ? 'active' : ''}
+                    onClick={() => {
+                      console.log('📑 Assessment Type tab clicked')
+                      setFormBuilderTab('assessment-type')
+                    }}
+                    style={{
+                      padding: '20px 40px',
+                      border: formBuilderTab === 'assessment-type' ? '3px solid #667eea' : '2px solid #e0e0e0',
+                      background: formBuilderTab === 'assessment-type' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#ffffff',
+                      color: formBuilderTab === 'assessment-type' ? 'white' : '#333',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      fontSize: '1.1em',
+                      boxShadow: formBuilderTab === 'assessment-type' ? '0 6px 20px rgba(102, 126, 234, 0.4)' : '0 2px 8px rgba(0,0,0,0.1)',
+                      transition: 'all 0.3s ease',
+                      minWidth: '200px',
+                      transform: formBuilderTab === 'assessment-type' ? 'scale(1.05)' : 'scale(1)'
+                    }}
+                  >
+                    📑 Add Assessment Type
+                  </button>
+                  <button
+                    className={formBuilderTab === 'category' ? 'active' : ''}
+                    onClick={() => {
+                      console.log('📁 Category tab clicked')
+                      setFormBuilderTab('category')
+                    }}
+                    style={{
+                      padding: '20px 40px',
+                      border: formBuilderTab === 'category' ? '3px solid #667eea' : '2px solid #e0e0e0',
+                      background: formBuilderTab === 'category' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#ffffff',
+                      color: formBuilderTab === 'category' ? 'white' : '#333',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      fontSize: '1.1em',
+                      boxShadow: formBuilderTab === 'category' ? '0 6px 20px rgba(102, 126, 234, 0.4)' : '0 2px 8px rgba(0,0,0,0.1)',
+                      transition: 'all 0.3s ease',
+                      minWidth: '200px',
+                      transform: formBuilderTab === 'category' ? 'scale(1.05)' : 'scale(1)'
+                    }}
+                  >
+                    📁 Add Category
+                  </button>
+                  <button
+                    className={formBuilderTab === 'question' ? 'active' : ''}
+                    onClick={() => {
+                      console.log('❓ Question tab clicked')
+                      setFormBuilderTab('question')
+                    }}
+                    style={{
+                      padding: '20px 40px',
+                      border: formBuilderTab === 'question' ? '3px solid #667eea' : '2px solid #e0e0e0',
+                      background: formBuilderTab === 'question' ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#ffffff',
+                      color: formBuilderTab === 'question' ? 'white' : '#333',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      fontSize: '1.1em',
+                      boxShadow: formBuilderTab === 'question' ? '0 6px 20px rgba(102, 126, 234, 0.4)' : '0 2px 8px rgba(0,0,0,0.1)',
+                      transition: 'all 0.3s ease',
+                      minWidth: '200px',
+                      transform: formBuilderTab === 'question' ? 'scale(1.05)' : 'scale(1)'
+                    }}
+                  >
+                    ❓ Add Question
+                  </button>
+                </div>
+
+                {/* Form Builder Content */}
+                <div className="form-builder-content" style={{ 
+                  marginTop: '30px',
+                  padding: '30px',
+                  background: '#f9fafb',
+                  borderRadius: '8px',
+                  minHeight: '500px'
+                }}>
+                  {formBuilderTab === 'assessment-type' && (
+                    <div>
+                      <h3 style={{ marginBottom: '20px', color: '#667eea' }}>📑 Create Assessment Type</h3>
+                      <p style={{ marginBottom: '30px', color: '#666' }}>
+                        Start by creating an assessment type (e.g., "Performance Review", "AI Assessment", "Employee Survey").
+                        This is the main form that users will fill out.
+                      </p>
+                      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                        {assessmentTypes.length > 0 && (
+                          <div style={{ flex: '1', minWidth: '300px' }}>
+                            <h4 style={{ marginBottom: '15px' }}>Existing Assessment Types:</h4>
+                            <div style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', 
+                              gap: '15px' 
+                            }}>
+                              {assessmentTypes.map(type => (
+                                <div key={type.id} style={{
+                                  padding: '15px',
+                                  background: 'white',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e0e0e0',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                }}>
+                                  <div style={{ fontSize: '1.5em', marginBottom: '5px' }}>
+                                    {type.icon || '📝'}
+                                  </div>
+                                  <div style={{ fontWeight: '600', marginBottom: '5px' }}>
+                                    {type.name}
+                                  </div>
+                                  <div style={{ fontSize: '0.85em', color: '#666', marginBottom: '10px' }}>
+                                    {type.description || 'No description'}
+                                  </div>
+                                  <div style={{ fontSize: '0.8em', color: '#999' }}>
+                                    {type.category_count || 0} categories • {type.question_count || 0} questions
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div style={{ flex: '1', minWidth: '300px' }}>
+                          <button
+                            onClick={() => {
+                              setEditingItem(null)
+                              setShowAssessmentTypeModal(true)
+                            }}
+                            className="btn-primary"
+                            style={{
+                              width: '100%',
+                              padding: '20px',
+                              fontSize: '1.1em',
+                              marginBottom: '20px'
+                            }}
+                          >
+                            ➕ Create New Assessment Type
+                          </button>
+                          <div style={{
+                            padding: '20px',
+                            background: 'white',
+                            borderRadius: '8px',
+                            border: '1px solid #e0e0e0'
+                          }}>
+                            <h4 style={{ marginBottom: '10px' }}>💡 Tips:</h4>
+                            <ul style={{ paddingLeft: '20px', color: '#666' }}>
+                              <li>Give it a clear, descriptive name</li>
+                              <li>Add an icon (emoji) for visual appeal</li>
+                              <li>Enable "Single Question Mode" for better UX</li>
+                              <li>Use a URL-friendly slug</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {formBuilderTab === 'category' && (
+                    <div>
+                      <h3 style={{ marginBottom: '20px', color: '#667eea' }}>📁 Create Category</h3>
+                      <p style={{ marginBottom: '30px', color: '#666' }}>
+                        Organize your questions into categories. Each category groups related questions together.
+                      </p>
+                      {assessmentTypes.length === 0 ? (
+                        <div style={{
+                          padding: '40px',
+                          textAlign: 'center',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '2px dashed #e0e0e0'
+                        }}>
+                          <p style={{ color: '#999', marginBottom: '20px' }}>
+                            ⚠️ You need to create an Assessment Type first!
+                          </p>
+                          <button
+                            onClick={() => setFormBuilderTab('assessment-type')}
+                            className="btn-primary"
+                          >
+                            Go to Step 1: Create Assessment Type
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1', minWidth: '300px' }}>
+                            <h4 style={{ marginBottom: '15px' }}>Existing Categories:</h4>
+                            {categories.length > 0 ? (
+                              <div style={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', 
+                                gap: '15px' 
+                              }}>
+                                {categories.map(cat => (
+                                  <div key={cat.id} style={{
+                                    padding: '15px',
+                                    background: 'white',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e0e0e0',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                  }}>
+                                    <div style={{ fontWeight: '600', marginBottom: '5px' }}>
+                                      {cat.name}
+                                    </div>
+                                    <div style={{ fontSize: '0.85em', color: '#666', marginBottom: '10px' }}>
+                                      {cat.description || 'No description'}
+                                    </div>
+                                    <div style={{ fontSize: '0.8em', color: '#999' }}>
+                                      {cat.question_count || 0} questions
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p style={{ color: '#999', fontStyle: 'italic' }}>No categories yet. Create your first one!</p>
+                            )}
+                          </div>
+                          <div style={{ flex: '1', minWidth: '300px' }}>
+                            <button
+                              onClick={() => {
+                                setEditingItem(null)
+                                setShowCategoryModal(true)
+                              }}
+                              className="btn-primary"
+                              style={{
+                                width: '100%',
+                                padding: '20px',
+                                fontSize: '1.1em',
+                                marginBottom: '20px'
+                              }}
+                            >
+                              ➕ Create New Category
+                            </button>
+                            <div style={{
+                              padding: '20px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #e0e0e0'
+                            }}>
+                              <h4 style={{ marginBottom: '10px' }}>💡 Tips:</h4>
+                              <ul style={{ paddingLeft: '20px', color: '#666' }}>
+                                <li>Select the Assessment Type this category belongs to</li>
+                                <li>Use categories to group related questions</li>
+                                <li>Set display order to control sequence</li>
+                                <li>Examples: "Company Vision", "Leadership", "Technology"</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {formBuilderTab === 'question' && (
+                    <div>
+                      <h3 style={{ marginBottom: '20px', color: '#667eea' }}>❓ Create Question</h3>
+                      <p style={{ marginBottom: '30px', color: '#666' }}>
+                        Add questions with various types and options. This is where you build your form content.
+                      </p>
+                      {categories.length === 0 ? (
+                        <div style={{
+                          padding: '40px',
+                          textAlign: 'center',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '2px dashed #e0e0e0'
+                        }}>
+                          <p style={{ color: '#999', marginBottom: '20px' }}>
+                            ⚠️ You need to create a Category first!
+                          </p>
+                          <button
+                            onClick={() => setFormBuilderTab('category')}
+                            className="btn-primary"
+                          >
+                            Go to Step 2: Create Category
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '2', minWidth: '400px' }}>
+                            <h4 style={{ marginBottom: '15px' }}>Question Types Available:</h4>
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                              gap: '15px',
+                              marginBottom: '30px'
+                            }}>
+                              {[
+                                { type: 'text', icon: '📝', name: 'Text Input', desc: 'Free text answer' },
+                                { type: 'scale', icon: '📊', name: 'Scale (1-5)', desc: 'Rating scale' },
+                                { type: 'yes_no', icon: '✅', name: 'Yes/No', desc: 'Binary choice' },
+                                { type: 'multiple_choice', icon: '🔘', name: 'Multiple Choice', desc: 'Select one option' },
+                                { type: 'percentage_range', icon: '📈', name: 'Percentage', desc: '0-100% range' },
+                                { type: 'group', icon: '📦', name: 'Group', desc: 'Parent question' }
+                              ].map(qt => (
+                                <div key={qt.type} style={{
+                                  padding: '15px',
+                                  background: 'white',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e0e0e0',
+                                  textAlign: 'center'
+                                }}>
+                                  <div style={{ fontSize: '2em', marginBottom: '5px' }}>{qt.icon}</div>
+                                  <div style={{ fontWeight: '600', marginBottom: '5px' }}>{qt.name}</div>
+                                  <div style={{ fontSize: '0.8em', color: '#666' }}>{qt.desc}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{
+                              padding: '20px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #e0e0e0',
+                              marginTop: '20px'
+                            }}>
+                              <h4 style={{ marginBottom: '10px' }}>📋 Recent Questions:</h4>
+                              {questions.length > 0 ? (
+                                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                  {questions.slice(0, 5).map(cat => (
+                                    cat.questions && cat.questions.slice(0, 3).map(q => (
+                                      <div key={q.id} style={{
+                                        padding: '10px',
+                                        marginBottom: '10px',
+                                        background: '#f9fafb',
+                                        borderRadius: '6px',
+                                        border: '1px solid #e0e0e0'
+                                      }}>
+                                        <div style={{ fontWeight: '600', fontSize: '0.9em' }}>
+                                          {q.questionCode}: {q.questionText?.substring(0, 50)}...
+                                        </div>
+                                        <div style={{ fontSize: '0.8em', color: '#666', marginTop: '5px' }}>
+                                          Type: {q.questionType} • Category: {cat.name}
+                                        </div>
+                                      </div>
+                                    ))
+                                  ))}
+                                </div>
+                              ) : (
+                                <p style={{ color: '#999', fontStyle: 'italic' }}>No questions yet. Create your first one!</p>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ flex: '1', minWidth: '300px' }}>
+                            <button
+                              onClick={() => {
+                                setEditingItem(null)
+                                setShowQuestionModal(true)
+                              }}
+                              className="btn-primary"
+                              style={{
+                                width: '100%',
+                                padding: '20px',
+                                fontSize: '1.1em',
+                                marginBottom: '20px'
+                              }}
+                            >
+                              ➕ Create New Question
+                            </button>
+                            <div style={{
+                              padding: '20px',
+                              background: 'white',
+                              borderRadius: '8px',
+                              border: '1px solid #e0e0e0'
+                            }}>
+                              <h4 style={{ marginBottom: '10px' }}>💡 Tips:</h4>
+                              <ul style={{ paddingLeft: '20px', color: '#666', fontSize: '0.9em' }}>
+                                <li>Select the category for this question</li>
+                                <li>Choose appropriate question type</li>
+                                <li>Add help text to guide users</li>
+                                <li>Set options for scale/multiple choice</li>
+                                <li>Mark as required if needed</li>
+                                <li>Use question codes for easy reference</li>
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'stats' && !loading && (
               <>
                 {stats ? (
@@ -1188,7 +1885,7 @@ function AdminDashboard() {
                               </span>
                             </td>
                             <td>
-                              <div style={{ display: 'flex', gap: '5px' }}>
+                              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                                 <button
                                   onClick={() => {
                                     setSelectedCategory(cat)
@@ -1199,6 +1896,19 @@ function AdminDashboard() {
                                 >
                                   📋
                                 </button>
+                                {user?.role === 'admin' && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingItem({ category_id: cat.id })
+                                      setShowQuestionModal(true)
+                                    }}
+                                    className="btn-primary"
+                                    title="Add Question to this Category"
+                                    style={{ fontSize: '0.85em', padding: '4px 8px' }}
+                                  >
+                                    ➕ Question
+                                  </button>
+                                )}
                                 {user?.role === 'admin' && (
                                   <>
                                     <button
@@ -1305,6 +2015,17 @@ function AdminDashboard() {
                                 <button
                                   onClick={() => {
                                     setSelectedCategory(null)
+                                    setActiveTab('categories')
+                                    // Filter categories by this assessment type
+                                  }}
+                                  className="btn-view"
+                                  title="View Categories"
+                                >
+                                  📁
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedCategory(null)
                                     setActiveTab('questions')
                                     // Filter questions by this assessment type
                                   }}
@@ -1313,6 +2034,19 @@ function AdminDashboard() {
                                 >
                                   📋
                                 </button>
+                                {user?.role === 'admin' && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingItem({ assessment_type_id: type.id })
+                                      setShowCategoryModal(true)
+                                    }}
+                                    className="btn-primary"
+                                    title="Add Category to this Assessment Type"
+                                    style={{ fontSize: '0.85em', padding: '4px 8px' }}
+                                  >
+                                    ➕ Category
+                                  </button>
+                                )}
                                 {user?.role === 'admin' && (
                                   <button
                                     onClick={async () => {

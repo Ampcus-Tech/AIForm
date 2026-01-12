@@ -7,7 +7,16 @@ import AssessmentPreview from '../components/assessment/AssessmentPreview'
 import Dropdown from '../components/common/Dropdown'
 import '../styles.css'
 
+console.log('📦 Assessment component imported, APIs:', { assessmentAPI, questionsAPI, assessmentTypesAPI })
+console.log('✅ USING DYNAMIC VERSION FROM pages/Assessment.jsx')
+console.log('✅ This version loads questions from API, NOT static data')
+
 function Assessment() {
+  console.log('🎬 ==========================================')
+  console.log('🎬 Assessment component rendering...')
+  console.log('🎬 Component location: pages/Assessment.jsx')
+  console.log('🎬 This is the DYNAMIC VERSION with API calls')
+  console.log('🎬 ==========================================')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -27,12 +36,28 @@ function Assessment() {
   const [showPreview, setShowPreview] = useState(false)
   const [showContactInfo, setShowContactInfo] = useState(false) // New state for contact info step
   const [allQuestionsList, setAllQuestionsList] = useState([]) // Flattened list of all questions
+  const [submissionSuccess, setSubmissionSuccess] = useState(false) // Track successful submission
 
   const { assessmentTypeSlug } = useParams()
 
   // Load assessment types and questions on component mount
   useEffect(() => {
-    loadAssessmentTypes()
+    console.log('🚀 Assessment component mounted, loading assessment types...')
+    console.log('🔍 assessmentTypesAPI:', assessmentTypesAPI)
+    console.log('🔍 typeof assessmentTypesAPI.getAll:', typeof assessmentTypesAPI.getAll)
+    
+    // Test if API function exists
+    if (!assessmentTypesAPI || typeof assessmentTypesAPI.getAll !== 'function') {
+      console.error('❌ assessmentTypesAPI.getAll is not a function!', assessmentTypesAPI)
+      setError('API service not properly initialized')
+      return
+    }
+    
+    // Call the API
+    loadAssessmentTypes().catch(err => {
+      console.error('❌ Failed to load assessment types:', err)
+      setError(`Failed to load: ${err.message}`)
+    })
   }, [])
 
   useEffect(() => {
@@ -58,22 +83,34 @@ function Assessment() {
 
   const loadAssessmentTypes = async () => {
     try {
+      console.log('🔄 Loading assessment types...')
       const response = await assessmentTypesAPI.getAll()
+      console.log('✅ Assessment types response:', response)
       if (response && response.success && response.assessmentTypes) {
-        // Filter to only active assessment types for users
-        const activeTypes = response.assessmentTypes.filter(type => type.is_active !== false)
-        setAssessmentTypes(activeTypes)
+        // API already returns only active types (is_active = true), but double-check
+        // Check both is_active and isActive (camelCase) for compatibility
+        // API already returns only active types (WHERE is_active = true)
+        // Use the response directly - no need to filter again
+        console.log('📋 Assessment types from API:', response.assessmentTypes.length)
+        console.log('📋 Types:', response.assessmentTypes.map(t => `${t.name} (ID: ${t.id}, is_active: ${t.is_active}, isActive: ${t.isActive})`))
+        console.log('📋 Setting assessmentTypes state with', response.assessmentTypes.length, 'types')
+        setAssessmentTypes(response.assessmentTypes)
+        console.log('📋 State updated - assessmentTypes should now have', response.assessmentTypes.length, 'items')
         
         // Always auto-select the first active type (if any exist)
-        if (activeTypes.length > 0 && !selectedAssessmentType) {
-          const firstType = activeTypes[0]
+        if (response.assessmentTypes.length > 0 && !selectedAssessmentType) {
+          const firstType = response.assessmentTypes[0]
+          console.log('🎯 Auto-selecting first assessment type:', firstType.name)
           setSelectedAssessmentType(firstType)
           setFormData(prev => ({ ...prev, assessment_type_id: firstType.id }))
           loadQuestions(firstType.id)
         }
+      } else {
+        console.warn('⚠️ No assessment types in response or invalid format')
       }
     } catch (err) {
-      console.error('Error loading assessment types:', err)
+      console.error('❌ Error loading assessment types:', err)
+      setError('Failed to load assessment types. Please check your connection and try again.')
       // Continue with default behavior if types fail to load
     }
   }
@@ -83,23 +120,38 @@ function Assessment() {
       setLoading(true)
       setError('')
       
+      console.log('🔄 Loading questions for assessment type:', assessmentTypeId)
+      
+      // IMPORTANT: Only load questions for the specified assessment type
+      if (!assessmentTypeId) {
+        console.warn('⚠️ No assessment type ID provided, cannot load questions')
+        setError('Please select an assessment type')
+        setLoading(false)
+        return
+      }
+      
       let response
-      if (assessmentTypeId) {
-        // Load questions for specific assessment type
-        const typeResponse = await assessmentTypesAPI.getById(assessmentTypeId)
-        if (typeResponse && typeResponse.success && typeResponse.assessmentType) {
-          // Transform the response to match the expected format
-          response = {
-            success: true,
-            categories: typeResponse.assessmentType.categories || []
-          }
-        } else {
-          // Fallback to all questions
-          response = await questionsAPI.getAllQuestions()
+      // Always load questions for specific assessment type (no fallback to all questions)
+      console.log('📡 Calling assessmentTypesAPI.getById:', assessmentTypeId)
+      const typeResponse = await assessmentTypesAPI.getById(assessmentTypeId)
+      console.log('✅ Assessment type response:', typeResponse)
+      
+      if (typeResponse && typeResponse.success && typeResponse.assessmentType) {
+        // Transform the response to match the expected format
+        response = {
+          success: true,
+          categories: typeResponse.assessmentType.categories || []
         }
+        console.log('📊 Loaded categories for assessment type:', response.categories.length)
+        const totalQuestions = response.categories.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0)
+        console.log('📊 Total questions for this assessment type:', totalQuestions)
       } else {
-        // Load all questions (legacy behavior)
-        response = await questionsAPI.getAllQuestions()
+        console.warn('⚠️ No assessment type found or invalid response')
+        setError('Assessment type not found or has no questions')
+        setCategories([])
+        setAllQuestionsList([])
+        setLoading(false)
+        return
       }
       
       if (response && response.success && response.categories) {
@@ -132,11 +184,13 @@ function Assessment() {
               if (question.questionType !== 'group') {
                 flattenedQuestions.push({
                   ...question,
-                  questionNumber: questionNumber++,
+                  questionNumber: questionNumber,
                   categoryName: category.name,
                   categoryId: category.id,
-                  answerKey: question.questionCode || `q_${question.id}`
+                  answerKey: String(questionNumber), // Use sequential number as key (1, 2, 3...)
+                  originalQuestionCode: question.questionCode || `q_${question.id}` // Keep original for reference
                 })
+                questionNumber++
               }
               
               // Add child questions if they exist
@@ -144,12 +198,14 @@ function Assessment() {
                 question.children.forEach(child => {
                   flattenedQuestions.push({
                     ...child,
-                    questionNumber: questionNumber++,
+                    questionNumber: questionNumber,
                     categoryName: category.name,
                     categoryId: category.id,
                     parentQuestion: question,
-                    answerKey: child.questionCode || `q_${child.id}`
+                    answerKey: String(questionNumber), // Use sequential number as key
+                    originalQuestionCode: child.questionCode || `q_${child.id}` // Keep original for reference
                   })
+                  questionNumber++
                 })
               }
             })
@@ -164,35 +220,45 @@ function Assessment() {
         setShowContactInfo(false)
         
         // Initialize form data with empty answers for all questions
+        // Use sequential numbers (1, 2, 3...) as keys
         const initialAnswers = {}
         let questionCount = 0
-        let questionCodesFound = []
         
         flattenedQuestions.forEach(question => {
-          const answerKey = question.answerKey
+          const answerKey = question.answerKey // This is now "1", "2", "3", etc.
           if (answerKey) {
             initialAnswers[answerKey] = ''
             questionCount++
-            questionCodesFound.push(answerKey)
           }
         })
         
-        console.log('✅ Questions loaded:', questionCount, 'total questions with codes')
-        console.log('📝 Question codes:', questionCodesFound.slice(0, 10), questionCodesFound.length > 10 ? '...' : '')
+        console.log('✅ Questions loaded:', questionCount, 'total questions')
+        console.log('📝 Answer keys (sequential numbers):', Object.keys(initialAnswers).slice(0, 10), Object.keys(initialAnswers).length > 10 ? '...' : '')
         
         setFormData(prev => ({
           ...prev,
-          answers: initialAnswers
+          answers: initialAnswers,
+          assessment_type_id: assessmentTypeId // Ensure assessment_type_id is set
         }))
+        
+        console.log('✅ Questions loaded successfully for assessment type:', assessmentTypeId)
+        console.log('📝 Total questions:', questionCount)
       } else if (response && response.categories) {
         // Handle case where response doesn't have success field
         setCategories(response.categories)
+        setFormData(prev => ({
+          ...prev,
+          assessment_type_id: assessmentTypeId
+        }))
       } else {
+        console.error('❌ Invalid response format:', response)
         throw new Error('Invalid response format from questions API')
       }
     } catch (err) {
       console.error('Error loading questions:', err)
-      setError(err.message || 'Failed to load assessment questions. Please refresh the page.')
+      console.error('Error details:', err)
+      const errorMessage = err.message || err.response?.data?.message || 'Failed to load assessment questions. Please refresh the page.'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -210,40 +276,22 @@ function Assessment() {
       }
       
       // Clear child question answers when parent answer changes (for yes_no questions)
-      // Use the current categories from state to find the question
-      if (categories && categories.length > 0) {
-        const category = categories.find(cat => 
-          cat.questions && cat.questions.some(q => {
-            const qCode = q.questionCode || `q_${q.id}`
-            return qCode === name
-          })
-        )
-        
-        if (category) {
-          // Flatten all questions including children to find the question
-          const allQuestions = []
-          category.questions.forEach(q => {
-            allQuestions.push(q)
-            if (q.children && q.children.length > 0) {
-              allQuestions.push(...q.children)
+      // name is now the answerKey (sequential number like "1", "2", etc.)
+      const question = allQuestionsList.find(q => q.answerKey === name)
+      
+      if (question && question.questionType === 'yes_no' && question.children && question.children.length > 0) {
+        if (actualValue !== 'yes') {
+          // Clear child answers when parent is not "yes"
+          // Find children in allQuestionsList to get their answerKeys
+          question.children.forEach(child => {
+            const childInList = allQuestionsList.find(q => 
+              (q.questionCode === child.questionCode && q.id === child.id) ||
+              (q.id === child.id && q.parentId === question.id)
+            )
+            if (childInList && childInList.answerKey) {
+              newAnswers[childInList.answerKey] = ''
             }
           })
-          
-          const question = allQuestions.find(q => {
-            const qCode = q.questionCode || `q_${q.id}`
-            return qCode === name
-          })
-          
-          // If it's a yes_no question with children and answer is not "yes", clear children
-          if (question && question.questionType === 'yes_no' && question.children && question.children.length > 0) {
-            if (actualValue !== 'yes') {
-              // Clear child answers when parent is not "yes"
-              question.children.forEach(child => {
-                const childCode = child.questionCode || `q_${child.id}`
-                newAnswers[childCode] = ''
-              })
-            }
-          }
         }
       }
       
@@ -281,9 +329,25 @@ function Assessment() {
         contact_title: formData.contact_title,
       })
       
+      // Map sequential number keys (1, 2, 3...) back to question codes for backend
+      // Create a mapping from sequential numbers to question codes
+      const questionCodeMap = {}
+      allQuestionsList.forEach(q => {
+        if (q.answerKey && q.originalQuestionCode) {
+          questionCodeMap[q.answerKey] = q.originalQuestionCode
+        }
+      })
+      
+      // Convert answers from sequential numbers to question codes
+      const mappedAnswers = {}
+      Object.keys(filteredAnswers).forEach(key => {
+        const questionCode = questionCodeMap[key] || key // Use mapped code or keep original if not found
+        mappedAnswers[questionCode] = filteredAnswers[key]
+      })
+      
       // Prepare submission data in dynamic format
       const submissionData = {
-        answers: filteredAnswers,
+        answers: mappedAnswers, // Use question codes for backend
         contact_name: formData.contact_name,
         contact_email: formData.contact_email,
         company_name: formData.company_name,
@@ -291,34 +355,50 @@ function Assessment() {
         assessment_type_id: formData.assessment_type_id || selectedAssessmentType?.id || null,
       }
       
+      console.log('=== SUBMISSION MAPPING ===')
+      console.log('Sequential answers (frontend):', filteredAnswers)
+      console.log('Question code mapping:', questionCodeMap)
+      console.log('Mapped answers (backend):', mappedAnswers)
       console.log('Submitting data:', submissionData)
-      console.log('Answers count:', Object.keys(filteredAnswers).length)
 
       const response = await assessmentAPI.submit(submissionData)
       console.log('Submission response:', response)
       if (response.success) {
-        alert('Thank you for completing the assessment! Your responses have been recorded.')
-        // Reset form
+        // Mark submission as successful
+        setSubmissionSuccess(true)
+        
+        // Reset all state - clear preview, contact info, and form data
+        setShowPreview(false)
+        setShowContactInfo(false)
+        setCurrentQuestionIndex(0)
+        
+        // Reset form data using allQuestionsList (which uses sequential numbers)
         const initialAnswers = {}
-        categories.forEach(category => {
-          category.questions.forEach(question => {
-            if (!question.parentId) {
-              initialAnswers[question.questionCode] = ''
-              if (question.children && question.children.length > 0) {
-                question.children.forEach(child => {
-                  initialAnswers[child.questionCode] = ''
-                })
-              }
-            }
-          })
+        allQuestionsList.forEach(question => {
+          if (question.answerKey) {
+            initialAnswers[question.answerKey] = ''
+          }
         })
+        
         setFormData({
           answers: initialAnswers,
           contact_name: '',
           contact_email: '',
           company_name: '',
           contact_title: '',
+          assessment_type_id: formData.assessment_type_id, // Keep the assessment type
         })
+        
+        // Show success message
+        alert('Thank you for completing the assessment! Your responses have been recorded.')
+        
+        // After a short delay, reset success state and go back to first question
+        setTimeout(() => {
+          setSubmissionSuccess(false)
+          if (allQuestionsList.length > 0) {
+            setCurrentQuestionIndex(0)
+          }
+        }, 100)
       } else {
         setError(response.error || 'There was an error submitting your assessment. Please try again.')
       }
@@ -362,12 +442,18 @@ function Assessment() {
 
   // Render a single question
   const renderQuestion = (question, questionNumber) => {
-    // Use questionCode if available, otherwise use question ID as fallback
-    const questionCode = question.questionCode || `q_${question.id}`
-    const value = formData.answers[questionCode]
+    // Use sequential question number as key (1, 2, 3...)
+    // Find the question in allQuestionsList to get its sequential number
+    const questionInList = allQuestionsList.find(q => 
+      (q.questionCode === question.questionCode && q.id === question.id) ||
+      (q.id === question.id)
+    )
+    const answerKey = questionInList?.answerKey || String(questionNumber)
+    const value = formData.answers[answerKey]
     
     // For yes_no questions, check if we should show child questions
-    const showChildren = question.questionType === 'yes_no' && value === 'yes' && question.children && question.children.length > 0
+    const yesNoValue = String(value || '').toLowerCase().trim()
+    const showChildren = question.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true') && question.children && question.children.length > 0
 
     return (
       <div key={question.id} className="question-group">
@@ -381,8 +467,8 @@ function Assessment() {
         )}
         
         <QuestionInput
-          question={question}
-          value={formData.answers[questionCode]}
+          question={{ ...question, questionCode: answerKey }}
+          value={value || ''}
           onChange={handleChange}
           formData={formData}
         />
@@ -390,23 +476,31 @@ function Assessment() {
         {/* Render child questions if parent is answered "yes" */}
         {showChildren && (
           <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #667eea' }}>
-            {question.children.map((child, childIndex) => (
-              <div key={child.id} className="question-group">
-                <label className="question-label">
-                  {child.questionText}
-                  {child.isRequired && <span className="required">*</span>}
-                </label>
-                {child.helpText && (
-                  <p className="question-help">{child.helpText}</p>
-                )}
-                <QuestionInput
-                  question={child}
-                  value={formData.answers[child.questionCode || `q_${child.id}`]}
-                  onChange={handleChange}
-                  formData={formData}
-                />
-              </div>
-            ))}
+            {question.children.map((child, childIndex) => {
+              // Find child question in allQuestionsList to get its sequential number
+              const childInList = allQuestionsList.find(q => 
+                (q.questionCode === child.questionCode && q.id === child.id) ||
+                (q.id === child.id && q.parentId === question.id)
+              )
+              const childAnswerKey = childInList?.answerKey || String(questionNumber + childIndex + 1)
+              return (
+                <div key={child.id} className="question-group">
+                  <label className="question-label">
+                    {child.questionText}
+                    {child.isRequired && <span className="required">*</span>}
+                  </label>
+                  {child.helpText && (
+                    <p className="question-help">{child.helpText}</p>
+                  )}
+                  <QuestionInput
+                    question={{ ...child, questionCode: childAnswerKey }}
+                    value={formData.answers[childAnswerKey] || ''}
+                    onChange={handleChange}
+                    formData={formData}
+                  />
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -511,8 +605,19 @@ function Assessment() {
     await handleSubmit(e)
   }
 
-  // Render preview page
-  if (showPreview && isSingleQuestionMode) {
+  // Don't show preview if submission was successful - reset to first question instead
+  if (submissionSuccess) {
+    // Reset success state after a moment and show first question
+    setTimeout(() => {
+      setSubmissionSuccess(false)
+      setShowPreview(false)
+      setShowContactInfo(false)
+      setCurrentQuestionIndex(0)
+    }, 100)
+  }
+
+  // Render preview page (only if not submitted successfully)
+  if (showPreview && isSingleQuestionMode && !submissionSuccess) {
     return (
       <AssessmentPreview
         allQuestionsList={allQuestionsList}
@@ -570,6 +675,47 @@ function Assessment() {
               )}
             </>
           )}
+          
+          {/* Only show dropdown if there are multiple active assessment types */}
+          {assessmentTypes.length > 1 && (
+            <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
+                Select Assessment Type:
+              </label>
+              <Dropdown
+                value={selectedAssessmentType?.id || ''}
+                onChange={(typeId) => {
+                  const type = assessmentTypes.find(t => t.id === typeId)
+                  if (type) {
+                    console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
+                    // Clear previous questions and state
+                    setCategories([])
+                    setAllQuestionsList([])
+                    setCurrentQuestionIndex(0)
+                    setShowPreview(false)
+                    setShowContactInfo(false)
+                    // Clear previous answers
+                    setFormData(prev => ({
+                      ...prev,
+                      assessment_type_id: type.id,
+                      answers: {} // Clear previous answers when switching types
+                    }))
+                    // Set new assessment type
+                    setSelectedAssessmentType(type)
+                    // Load questions for the selected type only
+                    loadQuestions(type.id)
+                  }
+                }}
+                options={assessmentTypes.map(type => ({
+                  value: type.id,
+                  label: type.name,
+                  icon: type.icon || '📝'
+                }))}
+                placeholder="Select Assessment Type..."
+              />
+            </div>
+          )}
+          
           <div style={{ 
             marginTop: '20px', 
             padding: '15px', 
@@ -721,6 +867,47 @@ function Assessment() {
               )}
             </>
           )}
+          
+          {/* Only show dropdown if there are multiple active assessment types */}
+          {assessmentTypes.length > 1 && (
+            <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
+                Select Assessment Type:
+              </label>
+              <Dropdown
+                value={selectedAssessmentType?.id || ''}
+                onChange={(typeId) => {
+                  const type = assessmentTypes.find(t => t.id === typeId)
+                  if (type) {
+                    console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
+                    // Clear previous questions and state
+                    setCategories([])
+                    setAllQuestionsList([])
+                    setCurrentQuestionIndex(0)
+                    setShowPreview(false)
+                    setShowContactInfo(false)
+                    // Clear previous answers
+                    setFormData(prev => ({
+                      ...prev,
+                      assessment_type_id: type.id,
+                      answers: {} // Clear previous answers when switching types
+                    }))
+                    // Set new assessment type
+                    setSelectedAssessmentType(type)
+                    // Load questions for the selected type only
+                    loadQuestions(type.id)
+                  }
+                }}
+                options={assessmentTypes.map(type => ({
+                  value: type.id,
+                  label: type.name,
+                  icon: type.icon || '📝'
+                }))}
+                placeholder="Select Assessment Type..."
+              />
+            </div>
+          )}
+          
           <div style={{ 
             marginTop: '20px', 
             padding: '15px', 
@@ -871,8 +1058,10 @@ function Assessment() {
           </>
         )}
         
+        {/* Only show dropdown if there are multiple active assessment types */}
+        {console.log('🔍 Dropdown check - assessmentTypes.length:', assessmentTypes.length, 'Should show:', assessmentTypes.length > 1) || true}
         {assessmentTypes.length > 1 && (
-          <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative' }}>
+          <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative', zIndex: 1000 }}>
             <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
               Select Assessment Type:
             </label>
@@ -881,23 +1070,51 @@ function Assessment() {
               onChange={(typeId) => {
                 const type = assessmentTypes.find(t => t.id === typeId)
                 if (type) {
+                  console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
+                  // Clear previous questions and state
+                  setCategories([])
+                  setAllQuestionsList([])
+                  setCurrentQuestionIndex(0)
+                  setShowPreview(false)
+                  setShowContactInfo(false)
+                  // Clear previous answers
+                  setFormData(prev => ({
+                    ...prev,
+                    assessment_type_id: type.id,
+                    answers: {} // Clear previous answers when switching types
+                  }))
+                  // Set new assessment type
                   setSelectedAssessmentType(type)
-                  setFormData(prev => ({ ...prev, assessment_type_id: type.id }))
+                  // Load questions for the selected type only
                   loadQuestions(type.id)
                 }
               }}
-              options={assessmentTypes
-                .filter(type => type.is_active !== false)
-                .map(type => ({
-                  value: type.id,
-                  label: type.name,
-                  icon: type.icon || '📝'
-                }))}
+              options={assessmentTypes.map(type => ({
+                value: type.id,
+                label: type.name,
+                icon: type.icon || '📝'
+              }))}
               placeholder="Select Assessment Type..."
             />
-            <p style={{ marginTop: '8px', fontSize: '0.85em', color: 'rgba(255, 255, 255, 0.8)', fontStyle: 'italic' }}>
-              Default: {selectedAssessmentType?.name || 'First available type'} (you can change this)
-            </p>
+          </div>
+        )}
+        
+        {/* DEBUG: Always show assessment types count */}
+        {process.env.NODE_ENV === 'development' && (
+          <div style={{
+            position: 'fixed',
+            top: '10px',
+            right: '10px',
+            background: 'rgba(0,0,0,0.8)',
+            color: 'white',
+            padding: '10px',
+            borderRadius: '5px',
+            fontSize: '12px',
+            zIndex: 9999
+          }}>
+            <div>Assessment Types: {assessmentTypes.length}</div>
+            <div>Selected: {selectedAssessmentType?.name || 'None'}</div>
+            <div>Should show dropdown: {assessmentTypes.length > 1 ? 'YES' : 'NO'}</div>
           </div>
         )}
         

@@ -1,3 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://sbeamp.ampcustech.info/api'
-// "http://localhost:5000/api"||
-export default "http://localhost:5000/api"||API_BASE_URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
+console.log('🔗 API Base URL:', API_BASE_URL)
+
+export default API_BASE_URL

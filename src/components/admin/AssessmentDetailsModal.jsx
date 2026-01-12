@@ -4,7 +4,7 @@ import { formatAnswer } from '../../utils/formatAnswer'
 
 /**
  * Assessment Details Modal - displays full assessment information including answers
- * This is a complex component that handles multiple answer formats and fallbacks
+ * Updated UI to match the cleaner design from the second image
  */
 function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClose }) {
   // Helper function to format answer with labels for scale questions
@@ -13,22 +13,37 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
     return formatAnswer(answer, questionCode, questionType, question)
   }
 
-  // Extract answers from various sources (same logic as before, but extracted)
+  // Extract answers from various sources and group by category
   const extractAnswers = () => {
-    // This is a simplified version - the full logic is very complex
-    // For now, return a basic structure that can be expanded
     const allAnswers = {}
+    const answersByCategory = {}
     
-    // Try dynamicAnswers array first
+    console.log('🔍 AssessmentDetailsModal - extractAnswers called')
+    console.log('📦 Assessment data:', {
+      id: assessment.id,
+      assessment_type_id: assessment.assessment_type_id,
+      hasDynamicAnswers: !!assessment.dynamicAnswers,
+      dynamicAnswersLength: assessment.dynamicAnswers?.length || 0,
+      hasAnswers: !!assessment.answers,
+      allQuestionsMapKeys: Object.keys(allQuestionsMap || {}).length
+    })
+    
+    // Try dynamicAnswers array first (from assessment_answers table)
     const dynamicAnswersArray = assessment.dynamicAnswers || 
                                assessment.dynamic_answers || 
                                assessment.answer_details || 
                                []
     
+    console.log('📋 dynamicAnswersArray:', dynamicAnswersArray)
+    
     if (Array.isArray(dynamicAnswersArray) && dynamicAnswersArray.length > 0) {
-      dynamicAnswersArray.forEach(item => {
+      console.log(`📋 Processing ${dynamicAnswersArray.length} dynamic answers...`)
+      dynamicAnswersArray.forEach((item, index) => {
+        console.log(`Processing answer ${index + 1}:`, item)
         const qCode = item.question_code || item.questionCode || item.question_id
         if (qCode) {
+          // Include ALL answers, even if empty - we want to show all questions that were answered
+          // The answer value might be empty string, null, or undefined, but we still want to show the question
           let answerValue = item.answer_json || 
                          item.answerJson || 
                          item.answer_value || 
@@ -44,110 +59,330 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
             }
           }
           
-          if (answerValue !== null && answerValue !== undefined && answerValue !== '') {
-            allAnswers[qCode] = {
-              value: answerValue,
-              questionText: item.question_text || item.questionText || '',
-              questionType: item.question_type || item.questionType || '',
+          // Use question text directly from dynamicAnswers (from database) - this is the source of truth
+          // This ensures we show dynamic questions regardless of allQuestionsMap
+          // IMPORTANT: question_text should always come from the database via dynamicAnswers
+          let questionText = item.question_text || item.questionText
+          if (!questionText || questionText.trim() === '' || questionText === 'N/A') {
+            // Fallback to allQuestionsMap only if database doesn't have it
+            questionText = allQuestionsMap?.[qCode]?.questionText || allQuestionsMap?.[qCode]?.question_text
+          }
+          // Final fallback - show question code if no text available
+          if (!questionText || questionText.trim() === '' || questionText === 'N/A') {
+            questionText = `Question ${qCode}`
+          }
+          
+          let categoryName = item.category_name || item.categoryName
+          if (!categoryName || categoryName.trim() === '' || categoryName === 'N/A') {
+            categoryName = allQuestionsMap?.[qCode]?.categoryName || 'General'
+          }
+          
+          const questionType = item.question_type || item.questionType || allQuestionsMap?.[qCode]?.questionType || ''
+          
+          console.log(`✅ Added answer for ${qCode}:`, {
+            questionText: questionText,
+            answerValue: answerValue,
+            categoryName: categoryName,
+            questionType: questionType,
+            hasQuestionText: !!questionText && questionText !== 'N/A',
+            hasAnswerValue: answerValue !== null && answerValue !== undefined && answerValue !== '' && String(answerValue).trim() !== '',
+            itemKeys: Object.keys(item),
+            itemQuestionText: item.question_text,
+            itemQuestionTextAlt: item.questionText,
+            source: item.question_text ? 'database' : (allQuestionsMap?.[qCode] ? 'map' : 'fallback')
+          })
+          
+          allAnswers[qCode] = {
+            value: answerValue,
+            questionText: questionText, // Use text from database, not from map
+            questionType: questionType,
+            categoryName: categoryName,
+          }
+          
+          // Group by category
+          if (!answersByCategory[categoryName]) {
+            answersByCategory[categoryName] = []
+          }
+          answersByCategory[categoryName].push({
+            questionCode: qCode,
+            ...allAnswers[qCode]
+          })
+        }
+      })
+    }
+    
+    // Only use old answers object if dynamicAnswers is not available
+    // This prevents showing unfiltered answers when we have filtered dynamicAnswers
+    if (!dynamicAnswersArray || dynamicAnswersArray.length === 0) {
+      if (assessment.answers) {
+        let answersObj = {}
+        if (typeof assessment.answers === 'string') {
+          try {
+            answersObj = JSON.parse(assessment.answers)
+          } catch (e) {
+            answersObj = {}
+          }
+        } else if (typeof assessment.answers === 'object' && assessment.answers !== null) {
+          answersObj = assessment.answers
+        }
+        
+        Object.keys(answersObj).forEach(key => {
+          if (!allAnswers[key] && answersObj[key] !== null && answersObj[key] !== undefined && String(answersObj[key]).trim() !== '') {
+            const categoryName = allQuestionsMap?.[key]?.categoryName || 'General'
+            allAnswers[key] = {
+              value: answersObj[key],
+              questionText: allQuestionsMap?.[key]?.questionText || '',
+              questionType: allQuestionsMap?.[key]?.questionType || '',
+              categoryName: categoryName,
             }
+            
+            // Group by category
+            if (!answersByCategory[categoryName]) {
+              answersByCategory[categoryName] = []
+            }
+            answersByCategory[categoryName].push({
+              questionCode: key,
+              ...allAnswers[key]
+            })
           }
-        }
-      })
-    }
-    
-    // Add from answers object
-    if (assessment.answers) {
-      let answersObj = {}
-      if (typeof assessment.answers === 'string') {
-        try {
-          answersObj = JSON.parse(assessment.answers)
-        } catch (e) {
-          answersObj = {}
-        }
-      } else if (typeof assessment.answers === 'object' && assessment.answers !== null) {
-        answersObj = assessment.answers
+        })
       }
-      
-      Object.keys(answersObj).forEach(key => {
-        if (!allAnswers[key] && answersObj[key] !== null && answersObj[key] !== undefined && answersObj[key] !== '') {
-          allAnswers[key] = {
-            value: answersObj[key],
-            questionText: allQuestionsMap?.[key]?.questionText || '',
-            questionType: allQuestionsMap?.[key]?.questionType || '',
-          }
-        }
-      })
+    } else {
+      console.log('✅ Using filtered dynamicAnswers, skipping old answers object')
     }
     
-    return allAnswers
+    console.log('📊 Final allAnswers:', {
+      count: Object.keys(allAnswers).length,
+      keys: Object.keys(allAnswers),
+      categories: Object.keys(answersByCategory),
+      sample: Object.keys(allAnswers).length > 0 ? allAnswers[Object.keys(allAnswers)[0]] : null
+    })
+    
+    return { allAnswers, answersByCategory }
   }
 
-  const allAnswers = extractAnswers()
+  const { allAnswers, answersByCategory } = extractAnswers()
+  
+  console.log('🎯 Rendering AssessmentDetailsModal with', Object.keys(allAnswers).length, 'answers')
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content large-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>📋 Assessment Details</h2>
-          <button onClick={onClose} className="close-btn">×</button>
+    <div className="modal-overlay" onClick={onClose} style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10000,
+      backdropFilter: 'blur(4px)'
+    }}>
+      <div className="modal-content large-modal" onClick={(e) => e.stopPropagation()} style={{
+        background: 'white',
+        borderRadius: '16px',
+        maxWidth: '800px',
+        width: '90%',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+        position: 'relative'
+      }}>
+        <div className="modal-header" style={{
+          padding: '24px 30px',
+          borderBottom: '2px solid #e0e0e0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          borderRadius: '16px 16px 0 0',
+          color: 'white'
+        }}>
+          <h2 style={{ margin: 0, fontSize: '1.5em', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            📋 Assessment Details
+          </h2>
+          <button onClick={onClose} className="close-btn" style={{
+            background: 'rgba(255, 255, 255, 0.2)',
+            border: 'none',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            color: 'white',
+            fontSize: '24px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s',
+            fontWeight: 'bold'
+          }} onMouseOver={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.3)'}
+          onMouseOut={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}>×</button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" style={{ padding: '30px' }}>
           <div className="assessment-details">
-            <div className="detail-section highlight">
-              <h3>👤 Contact Information</h3>
-              <div className="info-grid">
-                <div className="info-item">
-                  <strong>Name:</strong> {assessment.user_name || assessment.contact_name || 'N/A'}
+            {/* Contact Information Section */}
+            <div className="detail-section" style={{
+              padding: '24px',
+              background: '#f8f9ff',
+              borderRadius: '12px',
+              marginBottom: '24px',
+              border: '1px solid #e0e7ff'
+            }}>
+              <h3 style={{ 
+                margin: '0 0 20px 0', 
+                fontSize: '1.2em', 
+                fontWeight: '600',
+                color: '#667eea',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                👤 Contact Information
+              </h3>
+              <div className="info-grid" style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: '16px'
+              }}>
+                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
+                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Name:</strong>
+                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.user_name || assessment.contact_name || 'N/A'}</span>
                 </div>
-                <div className="info-item">
-                  <strong>Email:</strong> {assessment.user_email || assessment.contact_email || 'N/A'}
+                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
+                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Email:</strong>
+                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.user_email || assessment.contact_email || 'N/A'}</span>
                 </div>
-                <div className="info-item">
-                  <strong>Company:</strong> {assessment.company_name || 'N/A'}
+                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
+                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Company:</strong>
+                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.company_name || 'N/A'}</span>
                 </div>
-                <div className="info-item">
-                  <strong>Title:</strong> {assessment.contact_title || 'N/A'}
+                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
+                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Title:</strong>
+                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.contact_title || 'N/A'}</span>
                 </div>
-                {(assessment.activeDate || assessment.active_date) && (
-                  <div className="info-item">
-                    <strong>Active Date:</strong> {formatDate(assessment.activeDate || assessment.active_date)}
-                  </div>
-                )}
-                {(assessment.expiryDate || assessment.expiry_date) && (
-                  <div className="info-item">
-                    <strong>Expiry Date:</strong> {formatDate(assessment.expiryDate || assessment.expiry_date)}
-                  </div>
-                )}
-                {!assessment.user_id && (
-                  <div className="info-item full-width">
-                    <span className="na-text">📝 Anonymous Submission</span>
-                  </div>
-                )}
               </div>
+              {!assessment.user_id && (
+                <div className="info-item full-width" style={{ 
+                  marginTop: '16px', 
+                  padding: '12px', 
+                  background: '#fff3cd', 
+                  borderRadius: '8px', 
+                  border: '1px solid #ffc107',
+                  textAlign: 'center'
+                }}>
+                  <span style={{ color: '#856404', fontWeight: '500', fontSize: '0.95em' }}>📝 Anonymous Submission</span>
+                </div>
+              )}
             </div>
 
-            {assessment.summary && (
-              <div className="detail-section highlight">
-                <h3>📊 Assessment Summary</h3>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <strong>Overall Score:</strong> {assessment.summary.overallScore || 0}%
+            {/* Assessment Answers Section - Grouped by Category */}
+            {Object.keys(answersByCategory).length > 0 ? (
+              Object.keys(answersByCategory).map((categoryName, categoryIndex) => {
+                const categoryAnswers = answersByCategory[categoryName]
+                return (
+                  <div key={categoryName} className="detail-section" style={{
+                    padding: '24px',
+                    background: '#f8f9ff',
+                    borderRadius: '12px',
+                    marginBottom: '24px',
+                    border: '1px solid #e0e7ff'
+                  }}>
+                    <h3 style={{ 
+                      margin: '0 0 20px 0', 
+                      fontSize: '1.2em', 
+                      fontWeight: '600',
+                      color: '#667eea',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      {categoryIndex === 0 && '📋 '}
+                      {categoryIndex === 1 && '📋 '}
+                      Section {categoryIndex + 1}: {categoryName}
+                    </h3>
+                    <div className="answers-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {categoryAnswers.map((answerData, answerIndex) => {
+                        const questionInfo = allQuestionsMap?.[answerData.questionCode]
+                        const displayAnswer = formatAnswerLocal(
+                          answerData.value,
+                          answerData.questionCode,
+                          questionInfo?.questionType || answerData.questionType
+                        )
+                        return (
+                          <div key={answerData.questionCode} className="answer-item" style={{
+                            padding: '20px',
+                            background: 'white',
+                            borderRadius: '10px',
+                            border: '1px solid #e0e0e0',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                            transition: 'all 0.2s'
+                          }} onMouseEnter={(e) => {
+                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(102, 126, 234, 0.15)'
+                            e.currentTarget.style.borderColor = '#667eea'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'
+                            e.currentTarget.style.borderColor = '#e0e0e0'
+                          }}>
+                            <div className="question-text" style={{
+                              marginBottom: '12px',
+                              fontSize: '1em',
+                              color: '#333',
+                              fontWeight: '500',
+                              lineHeight: '1.5'
+                            }}>
+                              <strong style={{ color: '#667eea', marginRight: '8px' }}>Q{answerIndex + 1}:</strong>
+                              {/* Use questionText directly from answerData (from database) - this is dynamic */}
+                              {/* Never show "N/A" - always show actual question text or fallback */}
+                              {answerData.questionText && answerData.questionText !== 'N/A' 
+                                ? answerData.questionText 
+                                : (questionInfo?.questionText && questionInfo.questionText !== 'N/A'
+                                  ? questionInfo.questionText
+                                  : `Question ${answerData.questionCode}`)}
+                            </div>
+                            <div className="answer-value" style={{
+                              padding: '12px',
+                              background: '#f8f9fa',
+                              borderRadius: '8px',
+                              border: '1px solid #e0e0e0'
+                            }}>
+                              <span className="answer-label" style={{
+                                color: '#666',
+                                fontWeight: '600',
+                                marginRight: '8px',
+                                fontSize: '0.9em'
+                              }}>Answer:</span>
+                              <span style={{ color: '#333' }}>
+                                {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
+                                  ? displayAnswer 
+                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                  <div className="info-item">
-                    <strong>Readiness Level:</strong> 
-                    <span className={`status-badge ${assessment.summary.readinessLevel?.toLowerCase().replace(' ', '-')}`}>
-                      {assessment.summary.readinessLevel || 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Display answers */}
-            {Object.keys(allAnswers).length > 0 ? (
-              <div className="detail-section">
-                <h3>Assessment Answers</h3>
-                <div className="question-grid">
+                )
+              })
+            ) : Object.keys(allAnswers).length > 0 ? (
+              <div className="detail-section" style={{
+                padding: '24px',
+                background: '#f8f9ff',
+                borderRadius: '12px',
+                marginBottom: '24px',
+                border: '1px solid #e0e7ff'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 20px 0', 
+                  fontSize: '1.2em', 
+                  fontWeight: '600',
+                  color: '#667eea'
+                }}>
+                  Assessment Answers
+                </h3>
+                <div className="answers-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   {Object.keys(allAnswers).map((questionCode, index) => {
                     const answerData = allAnswers[questionCode]
                     const questionInfo = allQuestionsMap?.[questionCode]
@@ -157,13 +392,44 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                       questionInfo?.questionType || answerData.questionType
                     )
                     return (
-                      <div key={questionCode} className={`question-item ${answerData.questionType === 'text' ? 'full-width' : ''}`}>
-                        <div className="question-text">
-                          <strong>{index + 1}:</strong> {answerData.questionText || `Question ${questionCode}`}
+                      <div key={questionCode} className="answer-item" style={{
+                        padding: '20px',
+                        background: 'white',
+                        borderRadius: '10px',
+                        border: '1px solid #e0e0e0',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                        transition: 'all 0.2s'
+                      }} onMouseEnter={(e) => {
+                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(102, 126, 234, 0.15)'
+                        e.currentTarget.style.borderColor = '#667eea'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'
+                        e.currentTarget.style.borderColor = '#e0e0e0'
+                      }}>
+                        <div className="question-text" style={{
+                          marginBottom: '12px',
+                          fontSize: '1em',
+                          color: '#333',
+                          fontWeight: '500',
+                          lineHeight: '1.5'
+                        }}>
+                          <strong style={{ color: '#667eea', marginRight: '8px' }}>{index + 1}:</strong>
+                          {answerData.questionText || questionInfo?.questionText || `Question ${questionCode}`}
                         </div>
-                        <div className="answer-value">
-                          <span className="answer-label">Answer:</span>
-                          {displayAnswer}
+                        <div className="answer-value" style={{
+                          padding: '12px',
+                          background: '#f8f9fa',
+                          borderRadius: '8px',
+                          border: '1px solid #e0e0e0'
+                        }}>
+                          <span className="answer-label" style={{
+                            color: '#666',
+                            fontWeight: '600',
+                            marginRight: '8px',
+                            fontSize: '0.9em'
+                          }}>Answer:</span>
+                          <span style={{ color: '#333' }}>{displayAnswer}</span>
                         </div>
                       </div>
                     )
@@ -171,18 +437,59 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                 </div>
               </div>
             ) : (
-              <div className="detail-section">
-                <p style={{ color: '#999', fontStyle: 'italic' }}>No answers found for this assessment.</p>
+              <div className="detail-section" style={{
+                padding: '40px',
+                textAlign: 'center',
+                background: '#f8f9ff',
+                borderRadius: '12px',
+                border: '1px solid #e0e7ff'
+              }}>
+                <p style={{ color: '#999', fontStyle: 'italic', fontSize: '1em' }}>No answers found for this assessment.</p>
               </div>
             )}
 
-            <div className="detail-section highlight">
-              <p><strong>📅 Submitted At:</strong> {formatDate(assessment.submitted_at || assessment.submittedAt)}</p>
+            {/* Submission Timestamp */}
+            <div className="detail-section" style={{
+              padding: '20px',
+              background: '#f8f9ff',
+              borderRadius: '12px',
+              border: '1px solid #e0e7ff',
+              textAlign: 'center'
+            }}>
+              <p style={{ margin: 0, color: '#667eea', fontWeight: '500' }}>
+                <strong style={{ marginRight: '8px' }}>📅 Submitted At:</strong>
+                {formatDate(assessment.submitted_at || assessment.submittedAt)}
+              </p>
             </div>
           </div>
         </div>
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-close">
+        <div className="modal-footer" style={{
+          padding: '20px 30px',
+          borderTop: '2px solid #e0e0e0',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          background: '#f8f9fa',
+          borderRadius: '0 0 16px 16px'
+        }}>
+          <button onClick={onClose} className="btn-close" style={{
+            padding: '12px 32px',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '1em',
+            fontWeight: '600',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+          }} onMouseEnter={(e) => {
+            e.target.style.transform = 'translateY(-2px)'
+            e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.transform = 'translateY(0)'
+            e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+          }}>
             Close
           </button>
         </div>

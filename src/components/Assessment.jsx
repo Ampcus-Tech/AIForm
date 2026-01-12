@@ -1,9 +1,15 @@
+// ⚠️ DEPRECATED: This is the OLD static Assessment component
+// The new dynamic component is in pages/Assessment.jsx
+// This file should NOT be used - it's kept for reference only
+
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { assessmentAPI } from '../services/api'
 import '../styles.css'
 
 function Assessment() {
+  console.warn('⚠️ WARNING: Using OLD static Assessment component from components/Assessment.jsx')
+  console.warn('⚠️ This should NOT be used - the dynamic version is in pages/Assessment.jsx')
   const [submitting, setSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     // Section 1
