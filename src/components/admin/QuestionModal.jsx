@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
+import { adminAPI } from '../../services/api'
 
 function QuestionModal({ question, categories, onClose, onSave }) {
+  const [parentQuestions, setParentQuestions] = useState([])
+  const [loadingParents, setLoadingParents] = useState(false)
   const [formData, setFormData] = useState({
     category_id: question?.category_id || question?.categoryId || (categories && categories.length > 0 ? categories[0].id : ''),
     question_text: question?.question_text || question?.questionText || '',
@@ -13,6 +16,149 @@ function QuestionModal({ question, categories, onClose, onSave }) {
     validation_rules: question?.validation_rules ? (typeof question.validation_rules === 'string' ? JSON.parse(question.validation_rules) : question.validation_rules) : null,
     parent_id: question?.parent_id || question?.parentId || null,
   })
+
+  // Load parent questions dynamically when modal opens or category changes
+  useEffect(() => {
+    const loadParentQuestions = async () => {
+      if (!categories || categories.length === 0) {
+        setParentQuestions([])
+        return
+      }
+      
+      setLoadingParents(true)
+      try {
+        // Get the assessment type ID from the selected category
+        const selectedCategory = categories.find(cat => cat.id === formData.category_id) || categories[0]
+        const assessmentTypeId = selectedCategory?.assessment_type_id || selectedCategory?.assessmentTypeId
+        
+        console.log(`🔍 Loading parent questions for category: ${selectedCategory?.name || 'Unknown'}, assessment_type_id: ${assessmentTypeId || 'NULL'}`)
+        
+        if (assessmentTypeId) {
+          // Fetch all questions for this assessment type to get parent questions
+          const response = await adminAPI.getAllQuestions(assessmentTypeId)
+          if (response && response.success && response.categories) {
+            // Flatten all questions - ANY question can be a parent, not just group/yes_no
+            const allQuestions = []
+            response.categories.forEach(cat => {
+              if (cat.questions && Array.isArray(cat.questions)) {
+                cat.questions.forEach(q => {
+                  // Exclude only the current question being edited
+                  // ALL other questions can be parents
+                  if (q.id !== question?.id) {
+                    allQuestions.push({
+                      ...q,
+                      categoryName: cat.name,
+                      categoryId: cat.id,
+                      categoryDisplayOrder: cat.display_order || cat.displayOrder || 0
+                    })
+                  }
+                })
+              }
+            })
+            // Sort by category display_order, then question display_order
+            allQuestions.sort((a, b) => {
+              const catOrderA = a.categoryDisplayOrder || 0
+              const catOrderB = b.categoryDisplayOrder || 0
+              if (catOrderA !== catOrderB) return catOrderA - catOrderB
+              const orderA = a.display_order || a.displayOrder || 0
+              const orderB = b.display_order || b.displayOrder || 0
+              return orderA - orderB
+            })
+            setParentQuestions(allQuestions)
+            console.log(`✅ Loaded ${allQuestions.length} parent question options for assessment type ${assessmentTypeId}`)
+            console.log(`   Categories: ${[...new Set(allQuestions.map(q => q.categoryName))].join(', ')}`)
+          } else {
+            console.warn('⚠️ No questions found in response for assessment type', assessmentTypeId)
+            setParentQuestions([])
+          }
+        } else {
+          // If no assessment type, fetch all questions from all assessment types
+          console.log('⚠️ No assessment_type_id found, fetching all questions...')
+          try {
+            // Try to get all assessment types and their questions
+            const allQuestions = []
+            
+            // First, try to get questions from categories that have questions array
+            categories.forEach(cat => {
+              if (cat.questions && Array.isArray(cat.questions)) {
+                cat.questions.forEach(q => {
+                  if (q.id !== question?.id) {
+                    allQuestions.push({
+                      ...q,
+                      categoryName: cat.name,
+                      categoryId: cat.id,
+                      categoryDisplayOrder: cat.display_order || cat.displayOrder || 0
+                    })
+                  }
+                })
+              }
+            })
+            
+            // If no questions found in categories prop, try fetching from API
+            if (allQuestions.length === 0) {
+              console.log('📡 Categories prop has no questions, fetching from API...')
+              // Fetch all assessment types and their questions
+              const assessmentTypesResponse = await adminAPI.getAllAssessmentTypes()
+              if (assessmentTypesResponse && assessmentTypesResponse.success && assessmentTypesResponse.assessmentTypes) {
+                for (const at of assessmentTypesResponse.assessmentTypes) {
+                  const questionsResponse = await adminAPI.getAllQuestions(at.id)
+                  if (questionsResponse && questionsResponse.success && questionsResponse.categories) {
+                    questionsResponse.categories.forEach(cat => {
+                      if (cat.questions && Array.isArray(cat.questions)) {
+                        cat.questions.forEach(q => {
+                          if (q.id !== question?.id) {
+                            allQuestions.push({
+                              ...q,
+                              categoryName: cat.name,
+                              categoryId: cat.id,
+                              categoryDisplayOrder: cat.display_order || cat.displayOrder || 0
+                            })
+                          }
+                        })
+                      }
+                    })
+                  }
+                }
+              }
+            }
+            
+            // Sort by category display_order, then question display_order
+            allQuestions.sort((a, b) => {
+              const catOrderA = a.categoryDisplayOrder || 0
+              const catOrderB = b.categoryDisplayOrder || 0
+              if (catOrderA !== catOrderB) return catOrderA - catOrderB
+              const orderA = a.display_order || a.displayOrder || 0
+              const orderB = b.display_order || b.displayOrder || 0
+              return orderA - orderB
+            })
+            
+            setParentQuestions(allQuestions)
+            if (allQuestions.length > 0) {
+              console.log(`✅ Loaded ${allQuestions.length} parent question options from all categories`)
+              console.log(`   Categories: ${[...new Set(allQuestions.map(q => q.categoryName))].join(', ')}`)
+            } else {
+              console.warn('⚠️ No parent questions found')
+            }
+          } catch (fetchErr) {
+            console.error('Error fetching all questions:', fetchErr)
+            setParentQuestions([])
+          }
+        }
+      } catch (err) {
+        console.error('Error loading parent questions:', err)
+        setParentQuestions([])
+      } finally {
+        setLoadingParents(false)
+      }
+    }
+    
+    // Load parent questions when modal opens or category changes
+    if (formData.category_id) {
+      loadParentQuestions()
+    } else {
+      setParentQuestions([])
+    }
+  }, [categories, formData.category_id, question?.id])
 
   // Validate and reset category_id if it doesn't exist in categories
   useEffect(() => {
@@ -523,24 +669,34 @@ function QuestionModal({ question, categories, onClose, onSave }) {
                 <select
                   value={formData.parent_id || ''}
                   onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : null })}
+                  disabled={loadingParents}
                   style={{
                     ...inputStyle,
-                    cursor: 'pointer',
+                    cursor: loadingParents ? 'wait' : 'pointer',
                     appearance: 'none',
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23667eea' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                     backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 16px center'
+                    backgroundPosition: 'right 16px center',
+                    opacity: loadingParents ? 0.6 : 1
                   }}
-                  onFocus={(e) => Object.assign(e.target.style, focusStyle)}
+                  onFocus={(e) => !loadingParents && Object.assign(e.target.style, focusStyle)}
                   onBlur={(e) => Object.assign(e.target.style, blurStyle)}
                 >
-                  <option value="">None (Standalone Question)</option>
-                  {categories.map(cat => 
-                    cat.questions?.filter(q => q.question_type === 'group' || q.question_type === 'yes_no').map(q => (
-                      <option key={q.id} value={q.id}>
-                        {cat.name} - {q.questionText || q.question_text}
-                      </option>
-                    ))
+                  <option value="">
+                    {loadingParents ? 'Loading parent questions...' : 'None (Standalone Question)'}
+                  </option>
+                  {parentQuestions.length > 0 ? (
+                    parentQuestions.map(q => {
+                      const questionText = q.questionText || q.question_text || q.questionCode || q.question_code || 'Untitled Question'
+                      const categoryName = q.categoryName || q.category_name || 'Unknown Category'
+                      return (
+                        <option key={q.id} value={q.id}>
+                          {categoryName} - {questionText}
+                        </option>
+                      )
+                    })
+                  ) : (
+                    !loadingParents && <option value="" disabled>No parent questions available</option>
                   )}
                 </select>
                 <small style={{ 
@@ -550,6 +706,7 @@ function QuestionModal({ question, categories, onClose, onSave }) {
                   display: 'block'
                 }}>
                   ℹ️ Select a parent question if this is a sub-question (e.g., appears when parent is answered "Yes")
+                  {loadingParents && <span style={{ color: '#667eea', marginLeft: '8px' }}>⏳ Loading...</span>}
                 </small>
               </div>
             )}

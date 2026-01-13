@@ -51,6 +51,7 @@ function AdminDashboard() {
   // Search and filter states
   const [userSearch, setUserSearch] = useState('')
   const [assessmentSearch, setAssessmentSearch] = useState('')
+  const [assessmentTypeFilter, setAssessmentTypeFilter] = useState('all')
   const [roleFilter, setRoleFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [filteredCategories, setFilteredCategories] = useState([])
@@ -70,7 +71,7 @@ function AdminDashboard() {
   // Reload specific tab data when switching tabs
   useEffect(() => {
     if (activeTab !== 'stats') {
-      loadData()
+    loadData()
     }
   }, [activeTab])
 
@@ -80,7 +81,7 @@ function AdminDashboard() {
 
   useEffect(() => {
     filterAssessments()
-  }, [assessments, assessmentSearch])
+  }, [assessments, assessmentSearch, assessmentTypeFilter])
 
   const filterCategories = useCallback(() => {
     let filtered = [...categories]
@@ -266,6 +267,15 @@ function AdminDashboard() {
   const filterAssessments = () => {
     let filtered = [...assessments]
     
+    // Filter by assessment type
+    if (assessmentTypeFilter !== 'all') {
+      const filterId = parseInt(assessmentTypeFilter)
+      filtered = filtered.filter(a => 
+        (a.assessment_type_id || a.assessmentTypeId) === filterId
+      )
+    }
+    
+    // Filter by search text
     if (assessmentSearch) {
       const searchLower = assessmentSearch.toLowerCase()
       filtered = filtered.filter(a => 
@@ -318,6 +328,499 @@ function AdminDashboard() {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
+  }
+
+  // Export assessments with questions and answers for selected assessment type
+  const exportAssessmentsWithAnswers = async () => {
+    try {
+      // Check if assessment type is selected
+      if (assessmentTypeFilter === 'all') {
+        alert('Please select an assessment type to export. This ensures the CSV only contains columns for questions from that specific type.')
+        return
+      }
+
+      if (filteredAssessments.length === 0) {
+        alert('No assessments found for the selected assessment type')
+        return
+      }
+
+      const selectedType = assessmentTypes.find(t => t.id === parseInt(assessmentTypeFilter))
+      if (!selectedType) {
+        alert('Selected assessment type not found')
+        return
+      }
+
+      // Import formatAnswer utility
+      const { formatAnswer } = await import('../utils/formatAnswer.js')
+
+      // Fetch questions for the selected assessment type
+      const questionsResponse = await adminAPI.getAllQuestions(parseInt(assessmentTypeFilter))
+      if (!questionsResponse || !questionsResponse.success) {
+        alert('Failed to load questions for the selected assessment type')
+        return
+      }
+
+      // Sort categories first by display_order to maintain proper sequence
+      const sortedCategories = [...(questionsResponse.categories || [])].sort((a, b) => {
+        const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : (a.displayOrder !== null && a.displayOrder !== undefined ? a.displayOrder : Number.MAX_SAFE_INTEGER)
+        const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : (b.displayOrder !== null && b.displayOrder !== undefined ? b.displayOrder : Number.MAX_SAFE_INTEGER)
+        if (orderA !== orderB) return orderA - orderB
+        // If display_order is same, sort by category ID as fallback
+        return (a.id || 0) - (b.id || 0)
+      })
+
+      // Flatten all questions from categories, maintaining category order
+      const allQuestions = []
+      if (Array.isArray(sortedCategories)) {
+        sortedCategories.forEach(category => {
+          if (category.questions && Array.isArray(category.questions)) {
+            // Sort questions within each category by display_order
+            const sortedCategoryQuestions = [...category.questions].sort((a, b) => {
+              const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : (a.displayOrder !== null && a.displayOrder !== undefined ? a.displayOrder : Number.MAX_SAFE_INTEGER)
+              const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : (b.displayOrder !== null && b.displayOrder !== undefined ? b.displayOrder : Number.MAX_SAFE_INTEGER)
+              if (orderA !== orderB) return orderA - orderB
+              // If display_order is same, sort by question ID as fallback
+              return (a.id || 0) - (b.id || 0)
+            })
+            
+            // Add sorted questions from this category
+            sortedCategoryQuestions.forEach(question => {
+              allQuestions.push({
+                ...question,
+                categoryName: category.name,
+                categoryId: category.id,
+                categoryDisplayOrder: category.display_order || category.displayOrder || Number.MAX_SAFE_INTEGER
+              })
+            })
+          }
+        })
+      }
+
+      // Final sort: by category display_order first, then question display_order
+      // This ensures questions are in proper sequence across all categories
+      allQuestions.sort((a, b) => {
+        // First sort by category display_order
+        const catOrderA = a.categoryDisplayOrder !== null && a.categoryDisplayOrder !== undefined ? a.categoryDisplayOrder : Number.MAX_SAFE_INTEGER
+        const catOrderB = b.categoryDisplayOrder !== null && b.categoryDisplayOrder !== undefined ? b.categoryDisplayOrder : Number.MAX_SAFE_INTEGER
+        if (catOrderA !== catOrderB) return catOrderA - catOrderB
+        
+        // Within same category, sort by question display_order
+        const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : (a.displayOrder !== null && a.displayOrder !== undefined ? a.displayOrder : Number.MAX_SAFE_INTEGER)
+        const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : (b.displayOrder !== null && b.displayOrder !== undefined ? b.displayOrder : Number.MAX_SAFE_INTEGER)
+        if (orderA !== orderB) return orderA - orderB
+        
+        // Final fallback: sort by question ID
+        return (a.id || 0) - (b.id || 0)
+      })
+      
+      console.log(`📝 Loaded ${allQuestions.length} questions dynamically (no hardcoded limits)`)
+      console.log(`📋 Question sequence (first 10):`, allQuestions.slice(0, 10).map((q, i) => `Q${i+1}: ${q.questionCode || q.question_code} (order: ${q.display_order || q.displayOrder})`))
+      console.log(`📋 Question sequence (last 10):`, allQuestions.slice(-10).map((q, i) => `Q${allQuestions.length - 10 + i + 1}: ${q.questionCode || q.question_code} (order: ${q.display_order || q.displayOrder})`))
+
+      // Create a map of question codes to questions for quick lookup
+      const questionsMap = {}
+      const questionCodesSet = new Set()
+      allQuestions.forEach(question => {
+        const qCode = question.questionCode || question.question_code || `q_${question.id}`
+        questionsMap[qCode] = question
+        questionCodesSet.add(qCode)
+        // Also add alternative formats
+        if (qCode.startsWith('ai_')) {
+          questionsMap[qCode.substring(3)] = question
+          questionCodesSet.add(qCode.substring(3))
+        } else if (qCode.startsWith('q') && !qCode.startsWith('ai_')) {
+          questionsMap[`ai_${qCode}`] = question
+          questionCodesSet.add(`ai_${qCode}`)
+        }
+      })
+      
+      console.log(`📝 Prepared ${allQuestions.length} questions for export`)
+      console.log(`📋 Question codes:`, Array.from(questionCodesSet).slice(0, 10), '...')
+
+      // Fetch detailed data for each assessment
+      const exportData = []
+      
+      for (const assessment of filteredAssessments) {
+        try {
+          // Fetch answers directly - try both detailed and raw formats
+          let allAnswers = {}
+          let dynamicAnswers = []
+          
+          // First try detailed format
+          const detailedResponse = await adminAPI.getAssessmentById(assessment.id, 'detailed')
+          const detailedAssessment = detailedResponse?.assessment || assessment
+          
+          // Get dynamic answers array
+          dynamicAnswers = detailedAssessment.dynamicAnswers || 
+                          detailedAssessment.dynamic_answers || 
+                          detailedAssessment.answer_details || 
+                          []
+          
+          // Also get raw answers object
+          if (detailedAssessment.answers && typeof detailedAssessment.answers === 'object') {
+            allAnswers = { ...detailedAssessment.answers }
+          }
+          
+          // If we don't have enough, try raw fetch
+          if (dynamicAnswers.length < allQuestions.length * 0.5) {
+            console.warn(`⚠️ Only ${dynamicAnswers.length} answers in dynamicAnswers, trying raw fetch...`)
+            const rawResponse = await adminAPI.getAssessmentById(assessment.id)
+            if (rawResponse?.assessment) {
+              const rawAssessment = rawResponse.assessment
+              if (rawAssessment.dynamicAnswers && Array.isArray(rawAssessment.dynamicAnswers)) {
+                dynamicAnswers = rawAssessment.dynamicAnswers
+              }
+              if (rawAssessment.answers && typeof rawAssessment.answers === 'object') {
+                allAnswers = { ...allAnswers, ...rawAssessment.answers }
+              }
+            }
+          }
+
+          // Build comprehensive answers map from all sources
+          const answersMap = {}
+          
+          // Process dynamicAnswers array
+          if (Array.isArray(dynamicAnswers)) {
+            console.log(`📊 Processing ${dynamicAnswers.length} answers from dynamicAnswers array for assessment ${assessment.id}`)
+            dynamicAnswers.forEach(answer => {
+              const qCode = answer.question_code || answer.questionCode
+              if (qCode) {
+                const answerValue = answer.answer_json || 
+                                  answer.answerJson || 
+                                  answer.answer_value || 
+                                  answer.answerValue || 
+                                  answer.answer || 
+                                  ''
+                
+                // Store with original code
+                answersMap[qCode] = {
+                  question_code: qCode,
+                  questionCode: qCode,
+                  answer_value: answerValue,
+                  answerValue: answerValue,
+                  answer: answerValue,
+                  question_text: answer.question_text || answer.questionText,
+                  question_type: answer.question_type || answer.questionType
+                }
+                
+                // Also store with alternative formats for matching
+                if (qCode.startsWith('ai_')) {
+                  answersMap[qCode.substring(3)] = answersMap[qCode]
+                } else if (qCode.startsWith('q') && !qCode.startsWith('ai_')) {
+                  answersMap[`ai_${qCode}`] = answersMap[qCode]
+                }
+              }
+            })
+          }
+          
+          // Process raw answers object
+          if (Object.keys(allAnswers).length > 0) {
+            console.log(`📦 Processing ${Object.keys(allAnswers).length} answers from raw answers object`)
+            Object.keys(allAnswers).forEach(qCode => {
+              if (!answersMap[qCode]) {
+                const answerValue = allAnswers[qCode]
+                answersMap[qCode] = {
+                  question_code: qCode,
+                  questionCode: qCode,
+                  answer_value: answerValue,
+                  answerValue: answerValue,
+                  answer: answerValue
+                }
+                // Also store with alternative formats
+                if (qCode.startsWith('ai_')) {
+                  answersMap[qCode.substring(3)] = answersMap[qCode]
+                } else if (qCode.startsWith('q') && !qCode.startsWith('ai_')) {
+                  answersMap[`ai_${qCode}`] = answersMap[qCode]
+                }
+              }
+            })
+          }
+          
+          console.log(`✅ Total mapped answers: ${Object.keys(answersMap).length} for assessment ${assessment.id}`)
+          console.log(`📋 Answer codes found:`, Object.keys(answersMap))
+          
+          // Verify we have answers for all questions (fully dynamic - no hardcoded limits)
+          const missingAnswers = []
+          allQuestions.forEach((q, idx) => {
+            const qCode = q.questionCode || q.question_code
+            const hasAnswer = answersMap[qCode] || 
+                            (qCode.startsWith('ai_') && answersMap[qCode.substring(3)]) ||
+                            (qCode.match(/^q\d+/) && answersMap[`ai_${qCode}`])
+            if (!hasAnswer) {
+              missingAnswers.push({ questionNumber: idx + 1, code: qCode })
+            }
+          })
+          if (missingAnswers.length > 0) {
+            console.warn(`⚠️ Missing answers for ${missingAnswers.length} questions:`, missingAnswers)
+          } else {
+            console.log(`✅ All ${allQuestions.length} questions have answers mapped`)
+          }
+
+          // Build assessment row with fixed columns first
+          const assessmentRow = {
+            'Assessment ID': assessment.id,
+            'Contact Name': assessment.user_name || assessment.contact_name || 'Anonymous',
+            'Contact Email': assessment.user_email || assessment.contact_email || 'N/A',
+            'Company Name': assessment.company_name || 'N/A',
+            'Contact Title': assessment.contact_title || 'N/A',
+            'Submitted At': formatDate(assessment.submitted_at)
+          }
+
+          // Add question columns dynamically - iterate through ALL questions in order (no limits)
+          let questionNumber = 1
+          console.log(`🔄 Processing ${allQuestions.length} questions for assessment ${assessment.id}`)
+          
+          allQuestions.forEach((question, questionIndex) => {
+            // Get the actual question code from database
+            const qCode = question.questionCode || question.question_code || `q_${question.id}`
+            
+            // Try to find answer using multiple code formats
+            let answerData = answersMap[qCode]
+            
+            // If not found with exact code, try alternative formats
+            if (!answerData) {
+              if (qCode.startsWith('ai_')) {
+                answerData = answersMap[qCode.substring(3)] // Try without "ai_" prefix
+              } else if (qCode.match(/^q\d+/)) {
+                answerData = answersMap[`ai_${qCode}`] // Try with "ai_" prefix
+              }
+            }
+            
+            // Extract answer value - handle all possible formats
+            let answerValue = ''
+            if (answerData) {
+              // Try multiple possible answer value fields
+              answerValue = answerData.answer_value !== undefined && answerData.answer_value !== null 
+                ? answerData.answer_value 
+                : (answerData.answerValue !== undefined && answerData.answerValue !== null
+                  ? answerData.answerValue
+                  : (answerData.answer !== undefined && answerData.answer !== null
+                    ? answerData.answer
+                    : (answerData.answer_json !== undefined && answerData.answer_json !== null
+                      ? answerData.answer_json
+                      : (answerData.answerJson !== undefined && answerData.answerJson !== null
+                        ? answerData.answerJson
+                        : ''))))
+              
+              // Parse JSON strings if needed
+              if (typeof answerValue === 'string' && answerValue.trim() !== '' && (answerValue.startsWith('{') || answerValue.startsWith('['))) {
+                try {
+                  const parsed = JSON.parse(answerValue)
+                  // If it's an object/array, convert to readable string
+                  if (typeof parsed === 'object') {
+                    answerValue = JSON.stringify(parsed)
+                  } else {
+                    answerValue = parsed
+                  }
+                } catch (e) {
+                  // Keep as string if parsing fails
+                }
+              }
+              
+              // Convert to string if it's not already
+              if (answerValue !== null && answerValue !== undefined && typeof answerValue !== 'string') {
+                answerValue = String(answerValue)
+              }
+            }
+            
+            // Debug logging for missing answers (fully dynamic - no hardcoded question numbers)
+            if (!answerData) {
+              const availableCodes = Object.keys(answersMap)
+              const similarCodes = availableCodes.filter(code => 
+                code.includes(qCode.substring(Math.max(0, qCode.length - 3))) || 
+                qCode.includes(code.substring(Math.max(0, code.length - 3)))
+              )
+              // Log all missing answers, not just after a specific number
+              console.warn(`⚠️ Q${questionNumber} (${qCode}): No answer found!`)
+              if (similarCodes.length > 0) {
+                console.warn(`   Similar codes found:`, similarCodes.slice(0, 10))
+              }
+            }
+
+            // Format the answer using the formatAnswer utility
+            let finalAnswerValue = ''
+            
+            if (answerValue !== null && answerValue !== undefined && answerValue !== '') {
+              // Try to format the answer
+              const formattedAnswer = formatAnswer(
+                answerValue,
+                qCode,
+                question.questionType || question.question_type || '',
+                question
+              )
+              
+              // Use formatted answer if it's valid, otherwise use raw value
+              if (formattedAnswer && formattedAnswer !== 'Not answered' && formattedAnswer.trim() !== '') {
+                finalAnswerValue = formattedAnswer
+              } else {
+                // Use raw value if formatting didn't work
+                finalAnswerValue = String(answerValue).trim()
+              }
+            }
+            
+            // If we still don't have a value, check if answerData exists but value is empty
+            if (!finalAnswerValue && answerData) {
+              // Answer exists but might be empty string - still show it
+              finalAnswerValue = 'No answer provided'
+            } else if (!finalAnswerValue) {
+              // No answer data at all
+              finalAnswerValue = 'No answer provided'
+            }
+
+            // Create column header with question number and text
+            const questionText = question.questionText || question.question_text || qCode
+            const columnHeader = `Q${questionNumber}: ${questionText}`
+            
+            // ALWAYS add the column to the row - this ensures all questions are in the CSV
+            assessmentRow[columnHeader] = finalAnswerValue
+            
+            // Debug log for every 5th question and last few questions
+            if (questionNumber % 5 === 0 || questionNumber > allQuestions.length - 3) {
+              console.log(`Q${questionNumber} (${qCode}):`, {
+                hasAnswerData: !!answerData,
+                rawAnswerValue: answerValue,
+                finalAnswerValue: finalAnswerValue,
+                columnHeader: columnHeader.substring(0, 50)
+              })
+            }
+
+            questionNumber++
+          })
+          
+          // Verify all questions were processed
+          const processedQuestions = questionNumber - 1
+          if (processedQuestions !== allQuestions.length) {
+            console.error(`❌ Mismatch: Processed ${processedQuestions} questions but expected ${allQuestions.length}`)
+          } else {
+            console.log(`✅ Completed export row for assessment ${assessment.id}: ${processedQuestions} questions processed`)
+          }
+          
+          // Count how many questions have answers
+          const questionsWithAnswers = Object.keys(assessmentRow).filter(key => 
+            key.startsWith('Q') && 
+            assessmentRow[key] && 
+            assessmentRow[key] !== 'No answer provided' &&
+            assessmentRow[key].trim() !== ''
+          ).length
+          console.log(`   Questions with answers: ${questionsWithAnswers} out of ${processedQuestions}`)
+
+          exportData.push(assessmentRow)
+        } catch (err) {
+          console.error(`Error processing assessment ${assessment.id}:`, err)
+          // Add basic row even if detailed fetch fails
+          exportData.push({
+            'Assessment ID': assessment.id,
+            'Contact Name': assessment.contact_name || assessment.user_name || 'Anonymous',
+            'Contact Email': assessment.contact_email || assessment.user_email || 'N/A',
+            'Company Name': assessment.company_name || 'N/A',
+            'Error': 'Failed to load detailed data'
+          })
+        }
+      }
+
+      // Generate CSV
+      if (exportData.length === 0) {
+        alert('No data to export')
+        return
+      }
+
+      // Get all unique headers from all rows (ensure all question columns are included)
+      const allHeaders = new Set()
+      exportData.forEach(row => {
+        Object.keys(row).forEach(key => allHeaders.add(key))
+      })
+      
+      // Sort headers: fixed columns first, then question columns in the SAME ORDER as questions were processed
+      const fixedHeaders = ['Assessment ID', 'Contact Name', 'Contact Email', 'Company Name', 'Contact Title', 'Submitted At']
+      
+      // Build question headers in the exact order questions were processed
+      const questionHeaders = []
+      let questionNum = 1
+      allQuestions.forEach(question => {
+        const questionText = question.questionText || question.question_text || (question.questionCode || question.question_code)
+        const questionHeader = `Q${questionNum}: ${questionText}`
+        if (allHeaders.has(questionHeader)) {
+          questionHeaders.push(questionHeader)
+        }
+        questionNum++
+      })
+      
+      // Add any remaining headers that weren't in the question list (shouldn't happen, but just in case)
+      const remainingHeaders = Array.from(allHeaders).filter(h => 
+        !fixedHeaders.includes(h) && !questionHeaders.includes(h)
+      )
+      
+      const headers = [
+        ...fixedHeaders.filter(h => allHeaders.has(h)), 
+        ...questionHeaders,
+        ...remainingHeaders
+      ]
+      
+      console.log(`📊 Header sequence verification:`)
+      console.log(`   Fixed headers: ${fixedHeaders.filter(h => allHeaders.has(h)).length}`)
+      console.log(`   Question headers: ${questionHeaders.length}`)
+      console.log(`   First 5 question headers:`, questionHeaders.slice(0, 5))
+      console.log(`   Last 5 question headers:`, questionHeaders.slice(-5))
+      
+      console.log(`📊 CSV Export Summary:`)
+      console.log(`   Total assessments: ${exportData.length}`)
+      console.log(`   Total columns: ${headers.length}`)
+      console.log(`   Fixed columns: ${fixedHeaders.filter(h => allHeaders.has(h)).length}`)
+      console.log(`   Question columns: ${questionHeaders.length}`)
+      console.log(`   First 5 question columns:`, questionHeaders.slice(0, 5))
+      console.log(`   Last 5 question columns:`, questionHeaders.slice(-5))
+
+      // Generate CSV content with proper escaping
+      const csvContent = [
+        headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(','),
+        ...exportData.map(row => 
+          headers.map(header => {
+            const value = row[header]
+            // Handle null, undefined, and empty values
+            if (value === null || value === undefined) {
+              return '""'
+            }
+            const stringValue = String(value)
+            // Escape quotes and wrap in quotes
+            return `"${stringValue.replace(/"/g, '""')}"`
+          }).join(',')
+        )
+      ].join('\n')
+      
+      console.log(`✅ CSV content generated: ${csvContent.length} characters`)
+
+      // Verify CSV content before downloading
+      const lines = csvContent.split('\n')
+      console.log(`📄 CSV Verification:`)
+      console.log(`   Total lines: ${lines.length}`)
+      console.log(`   Header line: ${lines[0]?.substring(0, 100)}...`)
+      if (lines.length > 1) {
+        console.log(`   First data line: ${lines[1]?.substring(0, 200)}...`)
+        // Count non-empty values in first row
+        const firstRowValues = lines[1].split(',').map(v => v.replace(/^"|"$/g, '').trim())
+        const nonEmptyValues = firstRowValues.filter(v => v && v !== '' && v !== 'No answer provided').length
+        console.log(`   Non-empty values in first row: ${nonEmptyValues} out of ${firstRowValues.length}`)
+      }
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      const typeSlug = selectedType.slug || selectedType.name.toLowerCase().replace(/\s+/g, '_')
+      link.setAttribute('download', `assessments_${typeSlug}_with_answers_${new Date().toISOString().split('T')[0]}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      alert(`✅ Exported ${exportData.length} assessment(s) for "${selectedType.name}"\n` +
+            `📊 Total columns: ${headers.length}\n` +
+            `❓ Question columns: ${questionHeaders.length}\n` +
+            `📝 Check browser console for detailed export information`)
+    } catch (error) {
+      console.error('Export error:', error)
+      alert('Error exporting assessments: ' + error.message)
+    }
   }
 
   const formatDate = (dateString) => {
@@ -433,7 +936,7 @@ function AdminDashboard() {
               <div className="stats-section">
                 {stats ? (
                   <>
-                    <div className="stats-grid">
+                <div className="stats-grid">
                       <div className="stat-card primary" style={{
                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                         color: 'white',
@@ -445,15 +948,15 @@ function AdminDashboard() {
                       onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                       >
                         <div className="stat-icon" style={{ fontSize: '3.5em', opacity: 0.9 }}>👥</div>
-                        <div className="stat-info">
+                    <div className="stat-info">
                           <h3 style={{ color: 'white', marginBottom: '8px', fontSize: '1.1em' }}>Total Users</h3>
                           <p className="stat-number" style={{ color: 'white', fontSize: '2.5em', fontWeight: '700', margin: '10px 0' }}>
                             {stats.totalUsers || 0}
                           </p>
                           <span className="stat-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9em' }}>Registered users</span>
-                        </div>
-                      </div>
-                      
+                    </div>
+                  </div>
+                  
                       <div className="stat-card success" style={{
                         background: 'linear-gradient(135deg, #27ae60 0%, #2ecc71 100%)',
                         color: 'white',
@@ -465,15 +968,15 @@ function AdminDashboard() {
                       onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                       >
                         <div className="stat-icon" style={{ fontSize: '3.5em', opacity: 0.9 }}>✅</div>
-                        <div className="stat-info">
+                    <div className="stat-info">
                           <h3 style={{ color: 'white', marginBottom: '8px', fontSize: '1.1em' }}>Completed Assessments</h3>
                           <p className="stat-number" style={{ color: 'white', fontSize: '2.5em', fontWeight: '700', margin: '10px 0' }}>
                             {stats.totalAssessments || 0}
                           </p>
                           <span className="stat-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9em' }}>Total submissions</span>
-                        </div>
-                      </div>
-                      
+                    </div>
+                  </div>
+                  
                       <div className="stat-card warning" style={{
                         background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
                         color: 'white',
@@ -485,7 +988,7 @@ function AdminDashboard() {
                       onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                       >
                         <div className="stat-icon" style={{ fontSize: '3.5em', opacity: 0.9 }}>📊</div>
-                        <div className="stat-info">
+                    <div className="stat-info">
                           <h3 style={{ color: 'white', marginBottom: '8px', fontSize: '1.1em' }}>Completion Rate</h3>
                           <p className="stat-number" style={{ color: 'white', fontSize: '2.5em', fontWeight: '700', margin: '10px 0' }}>
                             {stats.totalUsers > 0 ? Math.round((stats.usersWithAssessments / stats.totalUsers) * 100) : 0}%
@@ -493,9 +996,9 @@ function AdminDashboard() {
                           <span className="stat-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9em' }}>
                             {stats.usersWithAssessments || 0} of {stats.totalUsers || 0} users
                           </span>
-                        </div>
-                      </div>
-                      
+                    </div>
+                  </div>
+                  
                       <div className="stat-card danger" style={{
                         background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
                         color: 'white',
@@ -507,15 +1010,15 @@ function AdminDashboard() {
                       onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                       >
                         <div className="stat-icon" style={{ fontSize: '3.5em', opacity: 0.9 }}>🔐</div>
-                        <div className="stat-info">
+                    <div className="stat-info">
                           <h3 style={{ color: 'white', marginBottom: '8px', fontSize: '1.1em' }}>Administrators</h3>
                           <p className="stat-number" style={{ color: 'white', fontSize: '2.5em', fontWeight: '700', margin: '10px 0' }}>
                             {stats.totalAdmins || 0}
                           </p>
                           <span className="stat-label" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.9em' }}>Admin accounts</span>
-                        </div>
-                      </div>
                     </div>
+                  </div>
+                </div>
 
                     <div style={{ 
                       display: 'grid', 
@@ -545,7 +1048,7 @@ function AdminDashboard() {
                             <span className="detail-value" style={{ fontWeight: '700', color: '#667eea', fontSize: '1.1em' }}>
                               {stats.usersWithAssessments || 0}
                             </span>
-                          </div>
+                    </div>
                           <div className="detail-item" style={{
                             display: 'flex',
                             justifyContent: 'space-between',
@@ -557,7 +1060,7 @@ function AdminDashboard() {
                             <span className="detail-value" style={{ fontWeight: '700', color: '#e74c3c', fontSize: '1.1em' }}>
                               {(stats.totalUsers || 0) - (stats.usersWithAssessments || 0)}
                             </span>
-                          </div>
+                    </div>
                           <div className="detail-item" style={{
                             display: 'flex',
                             justifyContent: 'space-between',
@@ -569,7 +1072,7 @@ function AdminDashboard() {
                             <span className="detail-value" style={{ fontWeight: '700', color: '#27ae60', fontSize: '1.1em' }}>
                               {(stats.totalUsers || 0) - (stats.totalAdmins || 0)}
                             </span>
-                          </div>
+                    </div>
                           <div className="detail-item" style={{
                             display: 'flex',
                             justifyContent: 'space-between',
@@ -581,9 +1084,9 @@ function AdminDashboard() {
                             <span className="detail-value" style={{ fontWeight: '700', color: '#f39c12', fontSize: '1.1em' }}>
                               {stats.anonymousAssessments || 0}
                             </span>
-                          </div>
-                        </div>
-                      </div>
+                  </div>
+                </div>
+              </div>
 
                       <div className="detail-card" style={{
                         background: 'white',
@@ -789,9 +1292,9 @@ function AdminDashboard() {
                       display: 'flex',
                       alignItems: 'center'
                     }}>
-                      <select
-                        value={roleFilter}
-                        onChange={(e) => setRoleFilter(e.target.value)}
+                    <select
+                      value={roleFilter}
+                      onChange={(e) => setRoleFilter(e.target.value)}
                         style={{ 
                           padding: '10px 40px 10px 12px',
                           borderRadius: '10px',
@@ -816,11 +1319,11 @@ function AdminDashboard() {
                           e.target.style.borderColor = '#e0e0e0'
                           e.target.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'
                         }}
-                      >
-                        <option value="all">All Roles</option>
+                    >
+                      <option value="all">All Roles</option>
                         <option value="user">👤 Users Only</option>
                         <option value="admin">👑 Admins Only</option>
-                      </select>
+                    </select>
                     </div>
                     <button
                       onClick={() => {
@@ -905,7 +1408,7 @@ function AdminDashboard() {
                                 <td style={{ padding: '16px', fontWeight: '600', color: '#667eea' }}>#{u.id}</td>
                                 <td style={{ padding: '16px' }}>
                                   <strong style={{ fontSize: '1.05em', color: '#333' }}>{u.name}</strong>
-                                </td>
+                              </td>
                                 <td style={{ padding: '16px', color: '#666' }}>{u.email}</td>
                                 <td style={{ padding: '16px', textAlign: 'center' }}>
                                   <span style={{ 
@@ -931,9 +1434,9 @@ function AdminDashboard() {
                                     background: u.role === 'admin' ? '#fef3c7' : '#e0e7ff',
                                     color: u.role === 'admin' ? '#92400e' : '#667eea'
                                   }}>
-                                    {u.role === 'admin' ? '👑 Admin' : '👤 User'}
-                                  </span>
-                                </td>
+                                  {u.role === 'admin' ? '👑 Admin' : '👤 User'}
+                                </span>
+                              </td>
                                 <td style={{ padding: '16px' }}>
                                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
                                     <button
@@ -952,8 +1455,8 @@ function AdminDashboard() {
                                     >
                                       👁️ View
                                     </button>
-                                    <button
-                                      onClick={() => {
+                              <button
+                                onClick={() => {
                                         setEditingUser(u)
                                         setShowUserModal(true)
                                       }}
@@ -996,10 +1499,10 @@ function AdminDashboard() {
                                       }}
                                     >
                                       🗑️ Delete
-                                    </button>
+                              </button>
                                   </div>
-                                </td>
-                              </tr>
+                              </td>
+                            </tr>
                             )
                           })}
                         </tbody>
@@ -1046,11 +1549,61 @@ function AdminDashboard() {
                         className="search-input"
                       />
                     </div>
-                    <button
-                      onClick={() => exportToCSV(filteredAssessments, `assessments_${new Date().toISOString().split('T')[0]}.csv`)}
-                      className="btn-export"
+                    <select
+                      value={assessmentTypeFilter}
+                      onChange={(e) => setAssessmentTypeFilter(e.target.value)}
+                      className="filter-select"
+                      style={{
+                        padding: '12px 16px',
+                        fontSize: '14px',
+                        border: '2px solid #e0e0e0',
+                        borderRadius: '8px',
+                        backgroundColor: 'white',
+                        color: '#333',
+                        cursor: 'pointer',
+                        minWidth: '250px',
+                        appearance: 'none',
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23667eea' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 12px center',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                      }}
                     >
-                      📥 Export CSV
+                      <option value="all">All Assessment Types</option>
+                      {assessmentTypes.map(type => (
+                        <option key={type.id} value={type.id}>
+                          {type.icon || '📝'} {type.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={exportAssessmentsWithAnswers}
+                      className="btn-export"
+                      style={{
+                        padding: '12px 24px',
+                        fontSize: '14px',
+                        fontWeight: '600',
+                        backgroundColor: '#667eea',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.backgroundColor = '#5568d3'
+                        e.target.style.transform = 'translateY(-2px)'
+                        e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.backgroundColor = '#667eea'
+                        e.target.style.transform = 'translateY(0)'
+                        e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                      }}
+                    >
+                      📥 Export with Answers
                     </button>
                   </div>
                   <div className="table-info">
@@ -2601,12 +3154,12 @@ function AdminDashboard() {
                         {(viewingAssessmentType.is_active || viewingAssessmentType.isActive) ? '✅ Active' : '❌ Inactive'}
                       </span>
                     </div>
-                    <div className="info-item full-width">
+                      <div className="info-item full-width">
                       <strong>Description:</strong>
                       <p style={{ marginTop: '5px', color: '#666' }}>
                         {viewingAssessmentType.description || 'N/A'}
                       </p>
-                    </div>
+                      </div>
                   </div>
                 </div>
 
@@ -2629,7 +3182,7 @@ function AdminDashboard() {
                 </div>
 
                 {viewingAssessmentType.settings && Object.keys(viewingAssessmentType.settings).length > 0 && (
-                  <div className="detail-section">
+                <div className="detail-section">
                     <h3>Settings</h3>
                     <div className="info-grid">
                       {viewingAssessmentType.settings.singleQuestionMode && (
@@ -2637,18 +3190,18 @@ function AdminDashboard() {
                           <strong>Single Question Mode:</strong> ✅ Enabled
                         </div>
                       )}
-                    </div>
                   </div>
+                </div>
                 )}
 
                 <div className="detail-section highlight">
                   <div className="info-grid">
                     <div className="info-item">
                       <strong>Created At:</strong> {formatDate(viewingAssessmentType.created_at || viewingAssessmentType.createdAt)}
-                    </div>
+                  </div>
                     <div className="info-item">
                       <strong>Updated At:</strong> {formatDate(viewingAssessmentType.updated_at || viewingAssessmentType.updatedAt)}
-                    </div>
+                </div>
                   </div>
                 </div>
               </div>
@@ -2746,8 +3299,8 @@ function AdminDashboard() {
                       <strong>Assessments:</strong> <span style={{ color: '#667eea', fontWeight: '600', fontSize: '1.1em' }}>
                         {assessments.filter(a => a.user_id === viewingUser.id).length}
                       </span>
-                    </div>
                   </div>
+                </div>
                 </div>
               </div>
             </div>
@@ -2837,12 +3390,12 @@ function AdminDashboard() {
                   <div className="info-grid">
                     <div className="info-item">
                       <strong>Assessment Type:</strong> {assessmentTypes.find(at => at.id === (viewingCategory.assessment_type_id || viewingCategory.assessmentTypeId))?.name || 'N/A'}
-                    </div>
+                  </div>
                     <div className="info-item">
                       <strong>Questions:</strong> <span style={{ color: '#667eea', fontWeight: '600', fontSize: '1.1em' }}>
                         {questions.find(c => c.id === viewingCategory.id)?.questions?.length || 0}
                       </span>
-                    </div>
+                </div>
                   </div>
                 </div>
               </div>
@@ -2913,7 +3466,7 @@ function AdminDashboard() {
                       <p style={{ marginTop: '5px', color: '#333', fontSize: '1.05em' }}>
                         {viewingQuestion.questionText || viewingQuestion.question_text || 'N/A'}
                       </p>
-                    </div>
+                </div>
                     <div className="info-item">
                       <strong>Question Code:</strong> {viewingQuestion.questionCode || viewingQuestion.question_code || 'N/A'}
                     </div>

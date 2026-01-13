@@ -4,6 +4,7 @@ import { assessmentAPI, questionsAPI, assessmentTypesAPI } from '../services/api
 import QuestionInput from '../components/assessment/QuestionInput'
 import SingleQuestionView from '../components/assessment/SingleQuestionView'
 import AssessmentPreview from '../components/assessment/AssessmentPreview'
+import SuccessPage from '../components/assessment/SuccessPage'
 import Dropdown from '../components/common/Dropdown'
 import '../styles.css'
 
@@ -37,6 +38,7 @@ function Assessment() {
   const [showContactInfo, setShowContactInfo] = useState(false) // New state for contact info step
   const [allQuestionsList, setAllQuestionsList] = useState([]) // Flattened list of all questions
   const [submissionSuccess, setSubmissionSuccess] = useState(false) // Track successful submission
+  const [submittedAssessmentId, setSubmittedAssessmentId] = useState(null) // Store submitted assessment ID
 
   const { assessmentTypeSlug } = useParams()
 
@@ -202,6 +204,7 @@ function Assessment() {
                     categoryName: category.name,
                     categoryId: category.id,
                     parentQuestion: question,
+                    parentId: question.id, // Ensure parentId is set for matching
                     answerKey: String(questionNumber), // Use sequential number as key
                     originalQuestionCode: child.questionCode || `q_${child.id}` // Keep original for reference
                   })
@@ -364,7 +367,20 @@ function Assessment() {
       const response = await assessmentAPI.submit(submissionData)
       console.log('Submission response:', response)
       if (response.success) {
-        // Mark submission as successful
+        // Store the submitted assessment ID for tracking
+        const assessmentId = response.assessment?.id
+        if (assessmentId) {
+          setSubmittedAssessmentId(assessmentId)
+          // Store in localStorage for later access
+          localStorage.setItem(`assessment_${assessmentId}`, JSON.stringify({
+            id: assessmentId,
+            submittedAt: response.assessment.submittedAt,
+            assessmentType: selectedAssessmentType?.name,
+            contactEmail: formData.contact_email
+          }))
+        }
+        
+        // Mark submission as successful - this will show the success page
         setSubmissionSuccess(true)
         
         // Reset all state - clear preview, contact info, and form data
@@ -388,17 +404,6 @@ function Assessment() {
           contact_title: '',
           assessment_type_id: formData.assessment_type_id, // Keep the assessment type
         })
-        
-        // Show success message
-        alert('Thank you for completing the assessment! Your responses have been recorded.')
-        
-        // After a short delay, reset success state and go back to first question
-        setTimeout(() => {
-          setSubmissionSuccess(false)
-          if (allQuestionsList.length > 0) {
-            setCurrentQuestionIndex(0)
-          }
-        }, 100)
       } else {
         setError(response.error || 'There was an error submitting your assessment. Please try again.')
       }
@@ -478,15 +483,30 @@ function Assessment() {
           <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #667eea' }}>
             {question.children.map((child, childIndex) => {
               // Find child question in allQuestionsList to get its sequential number
-              const childInList = allQuestionsList.find(q => 
-                (q.questionCode === child.questionCode && q.id === child.id) ||
-                (q.id === child.id && q.parentId === question.id)
-              )
-              const childAnswerKey = childInList?.answerKey || String(questionNumber + childIndex + 1)
+              // Try multiple matching strategies
+              const childInList = allQuestionsList.find(q => {
+                // Match by ID (most reliable)
+                if (q.id === child.id) return true
+                // Match by questionCode and ID
+                if (q.questionCode === child.questionCode && q.id === child.id) return true
+                // Match by parentId and questionCode
+                if ((q.parentId === question.id || q.parentQuestion?.id === question.id) && 
+                    (q.questionCode === child.questionCode || q.originalQuestionCode === child.questionCode)) return true
+                return false
+              })
+              
+              // Use the answerKey from allQuestionsList if found, otherwise generate one
+              const childAnswerKey = childInList?.answerKey || 
+                                    (questionInList?.answerKey ? `${questionInList.answerKey}_child_${childIndex}` : String(questionNumber + childIndex + 1))
+              
+              // If child wasn't found in allQuestionsList, we still need to render it
+              // Use the original questionCode or generate one
+              const childQuestionCode = childInList?.originalQuestionCode || child.questionCode || `q_${child.id}`
+              
               return (
-                <div key={child.id} className="question-group">
+                <div key={child.id || childQuestionCode} className="question-group">
                   <label className="question-label">
-                    {child.questionText}
+                    {child.questionText || child.question_text}
                     {child.isRequired && <span className="required">*</span>}
                   </label>
                   {child.helpText && (
@@ -605,15 +625,42 @@ function Assessment() {
     await handleSubmit(e)
   }
 
-  // Don't show preview if submission was successful - reset to first question instead
+  // Show success page if submission was successful
   if (submissionSuccess) {
-    // Reset success state after a moment and show first question
-    setTimeout(() => {
-      setSubmissionSuccess(false)
-      setShowPreview(false)
-      setShowContactInfo(false)
-      setCurrentQuestionIndex(0)
-    }, 100)
+    return (
+      <SuccessPage
+        assessmentType={selectedAssessmentType}
+        assessmentId={submittedAssessmentId}
+        onStartNew={() => {
+          // Reset all state to start a new assessment
+          setSubmissionSuccess(false)
+          setSubmittedAssessmentId(null)
+          setShowPreview(false)
+          setShowContactInfo(false)
+          setCurrentQuestionIndex(0)
+          
+          // Reset form data
+          const initialAnswers = {}
+          allQuestionsList.forEach(question => {
+            if (question.answerKey) {
+              initialAnswers[question.answerKey] = ''
+            }
+          })
+          
+          setFormData({
+            answers: initialAnswers,
+            contact_name: '',
+            contact_email: '',
+            company_name: '',
+            contact_title: '',
+            assessment_type_id: formData.assessment_type_id,
+          })
+          
+          // Scroll to top
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
+    )
   }
 
   // Render preview page (only if not submitted successfully)
@@ -643,7 +690,31 @@ function Assessment() {
   if (showContactInfo && isSingleQuestionMode) {
     return (
       <div className="container">
-        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
+        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <Link
+            to="/check-results"
+            style={{
+              padding: '8px 20px',
+              background: '#48bb78',
+              color: 'white',
+              textDecoration: 'none',
+              borderRadius: '6px',
+              fontWeight: '600',
+              display: 'inline-block',
+              fontSize: '0.9em',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#38a169'
+              e.target.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#48bb78'
+              e.target.style.transform = 'translateY(0)'
+            }}
+          >
+            🔍 Check Results
+          </Link>
           <Link
             to="/login"
             style={{
@@ -655,6 +726,15 @@ function Assessment() {
               fontWeight: '600',
               display: 'inline-block',
               fontSize: '0.9em',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#5568d3'
+              e.target.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#667eea'
+              e.target.style.transform = 'translateY(0)'
             }}
           >
             🔐 Admin Login
@@ -835,7 +915,31 @@ function Assessment() {
 
     return (
       <div className="container">
-        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
+        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <Link
+            to="/check-results"
+            style={{
+              padding: '8px 20px',
+              background: '#48bb78',
+              color: 'white',
+              textDecoration: 'none',
+              borderRadius: '6px',
+              fontWeight: '600',
+              display: 'inline-block',
+              fontSize: '0.9em',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#38a169'
+              e.target.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#48bb78'
+              e.target.style.transform = 'translateY(0)'
+            }}
+          >
+            🔍 Check Results
+          </Link>
           <Link
             to="/login"
             style={{
@@ -847,6 +951,15 @@ function Assessment() {
               fontWeight: '600',
               display: 'inline-block',
               fontSize: '0.9em',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#5568d3'
+              e.target.style.transform = 'translateY(-2px)'
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = '#667eea'
+              e.target.style.transform = 'translateY(0)'
             }}
           >
             🔐 Admin Login
@@ -970,16 +1083,32 @@ function Assessment() {
              currentQuestion.children.length > 0 && (
               <div style={{ marginTop: '20px', paddingLeft: '20px', borderLeft: '4px solid #667eea' }}>
                 {currentQuestion.children.map((child, childIndex) => {
-                  const childAnswerKey = child.questionCode || `q_${child.id}`
+                  // Find child question in allQuestionsList to get its answerKey
+                  const childInList = allQuestionsList.find(q => {
+                    if (q.id === child.id) return true
+                    if (q.questionCode === child.questionCode && q.id === child.id) return true
+                    if ((q.parentId === currentQuestion.id || q.parentQuestion?.id === currentQuestion.id) && 
+                        (q.questionCode === child.questionCode || q.originalQuestionCode === child.questionCode)) return true
+                    return false
+                  })
+                  
+                  // Use the answerKey from allQuestionsList if found
+                  const childAnswerKey = childInList?.answerKey || 
+                                        child.questionCode || 
+                                        `q_${child.id}`
+                  
                   return (
-                    <div key={childAnswerKey} className="question-group" style={{ marginBottom: '20px' }}>
+                    <div key={child.id || childAnswerKey} className="question-group" style={{ marginBottom: '20px' }}>
                       <label className="question-label">
-                        {child.questionText}
+                        {child.questionText || child.question_text}
                         {child.isRequired && <span className="required">*</span>}
                       </label>
+                      {child.helpText && (
+                        <p className="question-help">{child.helpText}</p>
+                      )}
                       <QuestionInput
                         question={{ ...child, questionCode: childAnswerKey }}
-                        value={formData.answers[childAnswerKey]}
+                        value={formData.answers[childAnswerKey] || ''}
                         onChange={handleChange}
                         formData={formData}
                       />
@@ -1016,7 +1145,31 @@ function Assessment() {
 
   return (
     <div className="container">
-      <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
+      <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+        <Link
+          to="/check-results"
+          style={{
+            padding: '8px 20px',
+            background: '#48bb78',
+            color: 'white',
+            textDecoration: 'none',
+            borderRadius: '6px',
+            fontWeight: '600',
+            display: 'inline-block',
+            fontSize: '0.9em',
+            transition: 'all 0.3s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#38a169'
+            e.target.style.transform = 'translateY(-2px)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = '#48bb78'
+            e.target.style.transform = 'translateY(0)'
+          }}
+        >
+          🔍 Check Results
+        </Link>
         <Link
           to="/login"
           style={{
@@ -1028,6 +1181,15 @@ function Assessment() {
             fontWeight: '600',
             display: 'inline-block',
             fontSize: '0.9em',
+            transition: 'all 0.3s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = '#5568d3'
+            e.target.style.transform = 'translateY(-2px)'
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = '#667eea'
+            e.target.style.transform = 'translateY(0)'
           }}
         >
           🔐 Admin Login
@@ -1099,24 +1261,6 @@ function Assessment() {
           </div>
         )}
         
-        {/* DEBUG: Always show assessment types count */}
-        {process.env.NODE_ENV === 'development' && (
-          <div style={{
-            position: 'fixed',
-            top: '10px',
-            right: '10px',
-            background: 'rgba(0,0,0,0.8)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '5px',
-            fontSize: '12px',
-            zIndex: 9999
-          }}>
-            <div>Assessment Types: {assessmentTypes.length}</div>
-            <div>Selected: {selectedAssessmentType?.name || 'None'}</div>
-            <div>Should show dropdown: {assessmentTypes.length > 1 ? 'YES' : 'NO'}</div>
-          </div>
-        )}
         
         {assessmentTypes.length === 0 && !loading && (
           <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
@@ -1134,8 +1278,9 @@ function Assessment() {
       )}
 
       <form id="assessmentForm" onSubmit={handleSubmit}>
-        {categories.map((category) => {
-          // Filter out group questions (they're rendered through their children)
+        {categories.map((category, categoryIndex) => {
+          // Filter out child questions (they're rendered conditionally when parent is answered "yes")
+          // Also filter out group questions (they're rendered through their children)
           const mainQuestions = category.questions.filter(q => 
             !q.parentId && q.questionType !== 'group'
           )
@@ -1143,16 +1288,19 @@ function Assessment() {
           // Handle group questions separately
           const groupQuestions = category.questions.filter(q => q.questionType === 'group')
           
+          // Section number starts from 1 instead of 0
+          const sectionNumber = categoryIndex + 1
+          
           return (
             <section key={category.id} className="form-section">
-              <h2>Section {category.displayOrder}: {category.name}</h2>
+              <h2>Section {sectionNumber}: {category.name}</h2>
               {category.description && (
                 <p style={{ marginBottom: '20px', color: '#666', fontStyle: 'italic' }}>
                   {category.description}
                 </p>
               )}
 
-              {/* Render main questions */}
+              {/* Render main questions (child questions will be shown conditionally in renderQuestion) */}
               {mainQuestions.map((question) => {
                 const currentNumber = questionNumber++
                 return renderQuestion(question, currentNumber)

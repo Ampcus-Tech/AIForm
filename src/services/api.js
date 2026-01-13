@@ -91,6 +91,42 @@ export const assessmentAPI = {
     
     return data
   },
+
+  getById: async (id, format = 'detailed') => {
+    // Public route - no authentication required
+    const response = await fetch(`${API_BASE_URL}/assessment/${id}?format=${format}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    const data = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed')
+    }
+    
+    return data
+  },
+
+  getReport: async (id) => {
+    // Public route - no authentication required
+    const response = await fetch(`${API_BASE_URL}/assessment/report/${id}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    
+    const data = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Request failed')
+    }
+    
+    return data
+  },
 }
 
 // Admin API
