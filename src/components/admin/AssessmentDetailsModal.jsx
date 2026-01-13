@@ -99,13 +99,23 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
             categoryName: categoryName,
           }
           
-          // Group by category
+          // Group by category - include all fields from dynamicAnswers for hierarchy building
           if (!answersByCategory[categoryName]) {
             answersByCategory[categoryName] = []
           }
           answersByCategory[categoryName].push({
             questionCode: qCode,
-            ...allAnswers[qCode]
+            value: answerValue,
+            questionText: questionText,
+            questionType: questionType,
+            categoryName: categoryName,
+            // Include hierarchy fields from dynamicAnswers
+            parent_id: item.parent_id || item.parentId,
+            parentId: item.parent_id || item.parentId,
+            id: item.id,
+            display_order: item.display_order || item.displayOrder,
+            // Include question info for hierarchy building
+            questionInfo: allQuestionsMap?.[qCode]
           })
         }
       })
@@ -199,7 +209,7 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
           borderRadius: '16px 16px 0 0',
           color: 'white'
         }}>
-          <h2 style={{ margin: 0, fontSize: '1.5em', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h2 style={{ margin: 0, fontSize: '1.5em', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '10px', color: 'white' }}>
             📋 Assessment Details
           </h2>
           <button onClick={onClose} className="close-btn" style={{
@@ -302,66 +312,279 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                       Section {categoryIndex + 1}: {categoryName}
                     </h3>
                     <div className="answers-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {categoryAnswers.map((answerData, answerIndex) => {
-                        const questionInfo = allQuestionsMap?.[answerData.questionCode]
-                        const displayAnswer = formatAnswerLocal(
-                          answerData.value,
-                          answerData.questionCode,
-                          questionInfo?.questionType || answerData.questionType
-                        )
-                        return (
-                          <div key={answerData.questionCode} className="answer-item" style={{
-                            padding: '20px',
-                            background: 'white',
-                            borderRadius: '10px',
-                            border: '1px solid #e0e0e0',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                            transition: 'all 0.2s'
-                          }} onMouseEnter={(e) => {
-                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(102, 126, 234, 0.15)'
-                            e.currentTarget.style.borderColor = '#667eea'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'
-                            e.currentTarget.style.borderColor = '#e0e0e0'
-                          }}>
-                            <div className="question-text" style={{
-                              marginBottom: '12px',
-                              fontSize: '1em',
-                              color: '#333',
-                              fontWeight: '500',
-                              lineHeight: '1.5'
-                            }}>
-                              <strong style={{ color: '#667eea', marginRight: '8px' }}>Q{answerIndex + 1}:</strong>
-                              {/* Use questionText directly from answerData (from database) - this is dynamic */}
-                              {/* Never show "N/A" - always show actual question text or fallback */}
-                              {answerData.questionText && answerData.questionText !== 'N/A' 
-                                ? answerData.questionText 
-                                : (questionInfo?.questionText && questionInfo.questionText !== 'N/A'
-                                  ? questionInfo.questionText
-                                  : `Question ${answerData.questionCode}`)}
-                            </div>
-                            <div className="answer-value" style={{
-                              padding: '12px',
-                              background: '#f8f9fa',
-                              borderRadius: '8px',
-                              border: '1px solid #e0e0e0'
-                            }}>
-                              <span className="answer-label" style={{
-                                color: '#666',
-                                fontWeight: '600',
-                                marginRight: '8px',
-                                fontSize: '0.9em'
-                              }}>Answer:</span>
-                              <span style={{ color: '#333' }}>
-                                {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
-                                  ? displayAnswer 
-                                  : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
-                              </span>
-                            </div>
-                          </div>
-                        )
-                      })}
+                      {(() => {
+                        // Build a hierarchical structure of questions with parent-child relationships
+                        const buildQuestionHierarchy = (answers) => {
+                          const questionMap = {}
+                          const rootQuestions = []
+                          
+                          // First pass: create map of all questions
+                          answers.forEach(answerData => {
+                            const questionInfo = allQuestionsMap?.[answerData.questionCode] || questions?.find(cat => 
+                              cat.questions?.some(q => (q.questionCode || q.question_code) === answerData.questionCode)
+                            )?.questions?.find(q => (q.questionCode || q.question_code) === answerData.questionCode)
+                            
+                            questionMap[answerData.questionCode] = {
+                              ...answerData,
+                              questionInfo,
+                              children: [],
+                              parentId: answerData.parent_id || answerData.parentId || questionInfo?.parent_id || questionInfo?.parentId,
+                              id: answerData.id || questionInfo?.id,
+                              hasChildren: false // Will be determined in second pass
+                            }
+                          })
+                          
+                          // Second pass: build hierarchy and determine hasChildren
+                          Object.values(questionMap).forEach(q => {
+                            // Check if this question has children
+                            const hasChildren = Object.values(questionMap).some(child => {
+                              if (!child.parentId || child === q) return false
+                              // Match by ID (most reliable)
+                              if (child.parentId === q.id) return true
+                              // Match by questionCode as fallback
+                              if (child.parentId === q.questionCode) return true
+                              return false
+                            })
+                            q.hasChildren = hasChildren
+                            
+                            if (!q.parentId) {
+                              rootQuestions.push(q)
+                            } else {
+                              // Find parent by ID first, then by questionCode
+                              const parent = Object.values(questionMap).find(p => {
+                                if (!p.questionCode || p === q) return false
+                                // Match by ID (most reliable)
+                                if (p.id === q.parentId) return true
+                                // Match by questionCode as fallback
+                                if (p.questionCode === q.parentId) return true
+                                return false
+                              })
+                              if (parent) {
+                                parent.children.push(q)
+                              } else {
+                                // Parent not in this category, treat as root
+                                rootQuestions.push(q)
+                              }
+                            }
+                          })
+                          
+                          // Sort root questions and children by display_order
+                          const sortByDisplayOrder = (questions) => {
+                            return questions.sort((a, b) => {
+                              const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : Number.MAX_SAFE_INTEGER
+                              const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : Number.MAX_SAFE_INTEGER
+                              if (orderA !== orderB) return orderA - orderB
+                              return (a.questionCode || '').localeCompare(b.questionCode || '')
+                            }).map(q => {
+                              if (q.children && q.children.length > 0) {
+                                q.children = sortByDisplayOrder(q.children)
+                              }
+                              return q
+                            })
+                          }
+                          
+                          return sortByDisplayOrder(rootQuestions)
+                        }
+                        
+                        const hierarchicalQuestions = buildQuestionHierarchy(categoryAnswers)
+                        
+                        console.log('🔍 AssessmentDetailsModal - Category:', categoryName)
+                        console.log('  Total answers:', categoryAnswers.length)
+                        console.log('  Hierarchical questions:', hierarchicalQuestions.length)
+                        console.log('  Root questions:', hierarchicalQuestions.map(q => ({
+                          code: q.questionCode,
+                          text: q.questionText?.substring(0, 30),
+                          hasChildren: q.hasChildren,
+                          childrenCount: q.children?.length || 0
+                        })))
+                        
+                        // Fallback: if hierarchy building returns empty, show all questions as flat list
+                        if (!hierarchicalQuestions || hierarchicalQuestions.length === 0) {
+                          console.warn('⚠️ Hierarchy building returned empty, showing flat list for category:', categoryName)
+                          let flatCounter = 0
+                          return categoryAnswers.map((answerData, answerIndex) => {
+                            flatCounter++
+                            const questionInfo = allQuestionsMap?.[answerData.questionCode]
+                            const displayAnswer = formatAnswerLocal(
+                              answerData.value,
+                              answerData.questionCode,
+                              questionInfo?.questionType || answerData.questionType
+                            )
+                            
+                            return (
+                              <div key={answerData.questionCode || answerIndex} className="answer-item" style={{
+                                padding: '20px',
+                                background: 'white',
+                                borderRadius: '10px',
+                                border: '1px solid #e0e0e0',
+                                marginBottom: '16px'
+                              }}>
+                                <div className="question-text" style={{
+                                  marginBottom: '12px',
+                                  fontSize: '1em',
+                                  color: '#333',
+                                  fontWeight: '500',
+                                  lineHeight: '1.5',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px'
+                                }}>
+                                  <strong style={{ color: '#667eea', marginRight: '4px' }}>
+                                    Q{flatCounter}:
+                                  </strong>
+                                  <span>
+                                    {answerData.questionText && answerData.questionText !== 'N/A' 
+                                      ? answerData.questionText 
+                                      : (questionInfo?.questionText && questionInfo.questionText !== 'N/A'
+                                        ? questionInfo.questionText
+                                        : `Question ${answerData.questionCode}`)}
+                                  </span>
+                                </div>
+                                <div className="answer-value" style={{
+                                  padding: '12px',
+                                  background: '#f8f9fa',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e0e0e0',
+                                  borderLeft: '4px solid #667eea'
+                                }}>
+                                  <span className="answer-label" style={{
+                                    color: '#666',
+                                    fontWeight: '600',
+                                    marginRight: '8px',
+                                    fontSize: '0.9em'
+                                  }}>Answer:</span>
+                                  <span style={{ color: '#333' }}>
+                                    {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
+                                      ? displayAnswer 
+                                      : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
+                                  </span>
+                                </div>
+                              </div>
+                            )
+                          })
+                        }
+                        
+                        let parentQuestionCounter = 0 // Only count parent questions
+                        
+                        // Recursive function to render questions with their children (similar to submission/results page)
+                        const renderQuestionWithChildren = (questionData, level = 0) => {
+                          const isChild = level > 0
+                          const questionInfo = questionData.questionInfo || allQuestionsMap?.[questionData.questionCode]
+                          const displayAnswer = formatAnswerLocal(
+                            questionData.value,
+                            questionData.questionCode,
+                            questionInfo?.questionType || questionData.questionType
+                          )
+                          
+                          // Only increment counter for parent questions (not children)
+                          if (!isChild) {
+                            parentQuestionCounter++
+                          }
+                          
+                          console.log(`📝 Rendering question:`, {
+                            code: questionData.questionCode,
+                            level,
+                            isChild,
+                            counter: !isChild ? parentQuestionCounter : 'N/A (child)',
+                            hasChildren: questionData.hasChildren,
+                            childrenCount: questionData.children?.length || 0
+                          })
+                          
+                          return (
+                            <React.Fragment key={questionData.questionCode}>
+                              <div className="answer-item" style={{
+                                padding: level === 0 ? '20px' : '15px',
+                                background: isChild ? (level === 1 ? '#f8f9ff' : '#f0fff4') : 'white',
+                                borderRadius: '10px',
+                                border: level === 0 ? '1px solid #e0e0e0' : `3px solid ${level === 1 ? '#667eea' : '#48bb78'}`,
+                                marginLeft: level > 0 ? `${level * 20}px` : '0',
+                                marginTop: level > 0 ? '15px' : '0',
+                                transition: 'all 0.2s'
+                              }} onMouseEnter={(e) => {
+                                e.currentTarget.style.boxShadow = '0 4px 8px rgba(102, 126, 234, 0.15)'
+                                e.currentTarget.style.borderColor = isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#667eea'
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)'
+                                e.currentTarget.style.borderColor = isChild ? (level === 1 ? '#667eea' : '#48bb78') : (level === 0 ? '#e0e0e0' : (level === 1 ? '#667eea' : '#48bb78'))
+                              }}>
+                                <div className="question-text" style={{
+                                  marginBottom: '12px',
+                                  fontSize: level === 0 ? '1em' : (level === 1 ? '0.95em' : '0.9em'),
+                                  color: '#333',
+                                  fontWeight: '500',
+                                  lineHeight: '1.5',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  flexWrap: 'wrap'
+                                }}>
+                                  {!isChild && (
+                                    <strong style={{ color: '#667eea', marginRight: '4px' }}>
+                                      Q{parentQuestionCounter}:
+                                    </strong>
+                                  )}
+                                  {isChild && (
+                                    <span style={{
+                                      color: level === 1 ? '#667eea' : '#48bb78',
+                                      fontSize: '0.9em',
+                                      marginRight: '5px'
+                                    }}>
+                                      └
+                                    </span>
+                                  )}
+                                  {!isChild && questionData.hasChildren && (
+                                    <span style={{
+                                      padding: '2px 8px',
+                                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                      color: 'white',
+                                      borderRadius: '12px',
+                                      fontSize: '0.7em',
+                                      fontWeight: '600'
+                                    }}>
+                                      Parent
+                                    </span>
+                                  )}
+                                  <span>
+                                    {questionData.questionText && questionData.questionText !== 'N/A' 
+                                      ? questionData.questionText 
+                                      : (questionInfo?.questionText && questionInfo.questionText !== 'N/A'
+                                        ? questionInfo.questionText
+                                        : `Question ${questionData.questionCode}`)}
+                                  </span>
+                                </div>
+                                <div className="answer-value" style={{
+                                  padding: '12px',
+                                  background: '#f8f9fa',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e0e0e0',
+                                  borderLeft: `4px solid ${isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#667eea'}`
+                                }}>
+                                  <span className="answer-label" style={{
+                                    color: isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#666',
+                                    fontWeight: '600',
+                                    marginRight: '8px',
+                                    fontSize: '0.9em'
+                                  }}>Answer:</span>
+                                  <span style={{ color: '#333' }}>
+                                    {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
+                                      ? displayAnswer 
+                                      : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Recursively render children inline (similar to submission/results page) */}
+                              {questionData.children && questionData.children.length > 0 && (
+                                <div style={{ marginTop: '15px' }}>
+                                  {questionData.children.map(child => renderQuestionWithChildren(child, level + 1))}
+                                </div>
+                              )}
+                            </React.Fragment>
+                          )
+                        }
+                        
+                        return hierarchicalQuestions.map(q => renderQuestionWithChildren(q, 0))
+                      })()}
                     </div>
                   </div>
                 )

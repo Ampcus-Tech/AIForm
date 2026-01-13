@@ -60,6 +60,7 @@ function AdminDashboard() {
   const [questionAssessmentTypeFilter, setQuestionAssessmentTypeFilter] = useState('all')
   const [questionTypeFilter, setQuestionTypeFilter] = useState('all')
   const [filteredQuestions, setFilteredQuestions] = useState([])
+  const [expandedParents, setExpandedParents] = useState(new Set()) // Track expanded parent questions
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(10)
 
@@ -96,18 +97,53 @@ function AdminDashboard() {
     setFilteredCategories(filtered)
   }, [categories, categoryFilter])
 
+  // Helper function to recursively count all questions including nested children
+  const countAllQuestionsRecursively = (questionsList) => {
+    let count = 0
+    if (!Array.isArray(questionsList)) return count
+    questionsList.forEach(q => {
+      count++
+      if (q.children && Array.isArray(q.children) && q.children.length > 0) {
+        count += countAllQuestionsRecursively(q.children)
+      }
+    })
+    return count
+  }
+
   const filterQuestions = () => {
-    // Flatten all questions from categories
+    // Build questions with parent-child relationships preserved
     let allQuestions = []
+    
+    // Helper function to recursively add questions and preserve children structure
+    const addQuestionRecursively = (q, category, parentId = null, level = 0) => {
+      const questionData = {
+        ...q,
+        categoryId: category.id,
+        categoryName: category.name,
+        assessmentTypeId: category.assessment_type_id || category.assessmentTypeId,
+        parentId: parentId || q.parent_id || q.parentId,
+        level: level,
+        hasChildren: q.children && Array.isArray(q.children) && q.children.length > 0,
+        children: q.children || []
+      }
+      
+      allQuestions.push(questionData)
+      
+      // Recursively add children if they exist
+      if (q.children && Array.isArray(q.children) && q.children.length > 0) {
+        q.children.forEach(child => {
+          addQuestionRecursively(child, category, q.id, level + 1)
+        })
+      }
+    }
+    
     questions.forEach(category => {
       if (category.questions && Array.isArray(category.questions)) {
         category.questions.forEach(q => {
-          allQuestions.push({
-            ...q,
-            categoryId: category.id,
-            categoryName: category.name,
-            assessmentTypeId: category.assessment_type_id || category.assessmentTypeId
-          })
+          // Only add top-level questions (no parent_id)
+          if (!q.parent_id && !q.parentId) {
+            addQuestionRecursively(q, category, null, 0)
+          }
         })
       }
     })
@@ -369,8 +405,28 @@ function AdminDashboard() {
         return (a.id || 0) - (b.id || 0)
       })
 
-      // Flatten all questions from categories, maintaining category order
+      // Flatten all questions from categories recursively, maintaining parent-child relationships
       const allQuestions = []
+      const addQuestionRecursively = (question, category, level = 0, parentPrefix = '') => {
+        allQuestions.push({
+          ...question,
+          categoryName: category.name,
+          categoryId: category.id,
+          categoryDisplayOrder: category.display_order || category.displayOrder || Number.MAX_SAFE_INTEGER,
+          level: level,
+          parentPrefix: parentPrefix,
+          hasChildren: question.children && question.children.length > 0
+        })
+        
+        // Recursively add children if they exist
+        if (question.children && Array.isArray(question.children) && question.children.length > 0) {
+          question.children.forEach((child, childIndex) => {
+            const childPrefix = level === 0 ? `  → ` : `    → `
+            addQuestionRecursively(child, category, level + 1, childPrefix)
+          })
+        }
+      }
+      
       if (Array.isArray(sortedCategories)) {
         sortedCategories.forEach(category => {
           if (category.questions && Array.isArray(category.questions)) {
@@ -383,35 +439,77 @@ function AdminDashboard() {
               return (a.id || 0) - (b.id || 0)
             })
             
-            // Add sorted questions from this category
+            // Only add top-level questions (no parent_id) - children will be added recursively
             sortedCategoryQuestions.forEach(question => {
-              allQuestions.push({
-                ...question,
-                categoryName: category.name,
-                categoryId: category.id,
-                categoryDisplayOrder: category.display_order || category.displayOrder || Number.MAX_SAFE_INTEGER
-              })
+              if (!question.parent_id && !question.parentId) {
+                addQuestionRecursively(question, category, 0, '')
+              }
             })
           }
         })
       }
 
-      // Final sort: by category display_order first, then question display_order
-      // This ensures questions are in proper sequence across all categories
-      allQuestions.sort((a, b) => {
-        // First sort by category display_order
-        const catOrderA = a.categoryDisplayOrder !== null && a.categoryDisplayOrder !== undefined ? a.categoryDisplayOrder : Number.MAX_SAFE_INTEGER
-        const catOrderB = b.categoryDisplayOrder !== null && b.categoryDisplayOrder !== undefined ? b.categoryDisplayOrder : Number.MAX_SAFE_INTEGER
-        if (catOrderA !== catOrderB) return catOrderA - catOrderB
-        
-        // Within same category, sort by question display_order
-        const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : (a.displayOrder !== null && a.displayOrder !== undefined ? a.displayOrder : Number.MAX_SAFE_INTEGER)
-        const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : (b.displayOrder !== null && b.displayOrder !== undefined ? b.displayOrder : Number.MAX_SAFE_INTEGER)
-        if (orderA !== orderB) return orderA - orderB
-        
-        // Final fallback: sort by question ID
-        return (a.id || 0) - (b.id || 0)
+      // Sort questions while preserving parent-child hierarchy
+      // Group by category, then within category maintain parent-child order
+      const sortedAllQuestions = []
+      const categoryGroups = {}
+      
+      // Group questions by category
+      allQuestions.forEach(q => {
+        const catId = q.categoryId || 'unknown'
+        if (!categoryGroups[catId]) {
+          categoryGroups[catId] = []
+        }
+        categoryGroups[catId].push(q)
       })
+      
+      // Sort categories by display_order
+      const sortedCategoryIds = Object.keys(categoryGroups).sort((a, b) => {
+        const catA = categoryGroups[a][0]?.categoryDisplayOrder ?? Number.MAX_SAFE_INTEGER
+        const catB = categoryGroups[b][0]?.categoryDisplayOrder ?? Number.MAX_SAFE_INTEGER
+        return catA - catB
+      })
+      
+      // For each category, maintain the order from addQuestionRecursively
+      // (which already has parent, then children, then next parent)
+      sortedCategoryIds.forEach(catId => {
+        const categoryQuestions = categoryGroups[catId]
+        // The questions are already in hierarchical order from addQuestionRecursively
+        // Just sort top-level parents by display_order, but keep children with their parents
+        const parentQuestions = categoryQuestions.filter(q => q.level === 0)
+        const childQuestions = categoryQuestions.filter(q => q.level > 0)
+        
+        // Sort only parent questions by display_order
+        parentQuestions.sort((a, b) => {
+          const orderA = a.display_order ?? a.displayOrder ?? Number.MAX_SAFE_INTEGER
+          const orderB = b.display_order ?? b.displayOrder ?? Number.MAX_SAFE_INTEGER
+          if (orderA !== orderB) return orderA - orderB
+          return (a.id || 0) - (b.id || 0)
+        })
+        
+        // Rebuild the hierarchical order: for each parent, add it and its children
+        parentQuestions.forEach(parent => {
+          sortedAllQuestions.push(parent)
+          // Add all children of this parent (maintaining their order)
+          childQuestions.forEach(child => {
+            if ((child.parentId === parent.id || child.parentId === parent.questionCode || 
+                 child.parentId === parent.question_code) && child.level === 1) {
+              sortedAllQuestions.push(child)
+              // Add sub-children if any
+              childQuestions.forEach(subChild => {
+                if ((subChild.parentId === child.id || subChild.parentId === child.questionCode ||
+                     subChild.parentId === child.question_code) && subChild.level === 2) {
+                  sortedAllQuestions.push(subChild)
+                }
+              })
+            }
+          })
+        })
+      })
+      
+      // Replace allQuestions with sorted version
+      allQuestions.length = 0
+      allQuestions.push(...sortedAllQuestions)
       
       console.log(`📝 Loaded ${allQuestions.length} questions dynamically (no hardcoded limits)`)
       console.log(`📋 Question sequence (first 10):`, allQuestions.slice(0, 10).map((q, i) => `Q${i+1}: ${q.questionCode || q.question_code} (order: ${q.display_order || q.displayOrder})`))
@@ -567,10 +665,15 @@ function AdminDashboard() {
           }
 
           // Add question columns dynamically - iterate through ALL questions in order (no limits)
-          let questionNumber = 1
+          // Only count parent questions for numbering (Q1, Q2, Q3)
+          let parentQuestionNumber = 0
           console.log(`🔄 Processing ${allQuestions.length} questions for assessment ${assessment.id}`)
           
           allQuestions.forEach((question, questionIndex) => {
+            // Only increment counter for parent questions (level 0)
+            if (question.level === 0) {
+              parentQuestionNumber++
+            }
             // Get the actual question code from database
             const qCode = question.questionCode || question.question_code || `q_${question.id}`
             
@@ -631,7 +734,8 @@ function AdminDashboard() {
                 qCode.includes(code.substring(Math.max(0, code.length - 3)))
               )
               // Log all missing answers, not just after a specific number
-              console.warn(`⚠️ Q${questionNumber} (${qCode}): No answer found!`)
+              const displayNum = question.level === 0 ? `Q${parentQuestionNumber}` : 'Child'
+              console.warn(`⚠️ ${displayNum} (${qCode}): No answer found!`)
               if (similarCodes.length > 0) {
                 console.warn(`   Similar codes found:`, similarCodes.slice(0, 10))
               }
@@ -667,37 +771,74 @@ function AdminDashboard() {
               finalAnswerValue = 'No answer provided'
             }
 
-            // Create column header with question number and text
+            // Create user-friendly column header with clear parent-child indicators
             const questionText = question.questionText || question.question_text || qCode
-            const columnHeader = `Q${questionNumber}: ${questionText}`
+            
+            // Only number parent questions (level 0)
+            // For child questions, show relationship to parent
+            let columnHeader = ''
+            if (question.level === 0) {
+              // Parent question - use Q1, Q2, Q3 format
+              const parentLabel = question.hasChildren ? ' (Parent)' : ''
+              columnHeader = `Q${parentQuestionNumber}: ${questionText}${parentLabel}`
+            } else if (question.level === 1) {
+              // Child question - find parent and show relationship
+              let parentNum = '?'
+              // Find the parent question
+              const parentQuestion = allQuestions.find((q, idx) => {
+                if (question.parentId) {
+                  return (q.id === question.parentId || q.questionCode === question.parentId) && q.level === 0
+                }
+                return false
+              })
+              if (parentQuestion) {
+                // Count how many parent questions come before this parent
+                const parentIndex = allQuestions.indexOf(parentQuestion)
+                parentNum = allQuestions.slice(0, parentIndex + 1).filter(q => q.level === 0).length
+              }
+              columnHeader = `  → Child of Q${parentNum}: ${questionText}`
+            } else {
+              // Sub-child question - find parent and show relationship
+              let parentNum = '?'
+              // Find the parent question (which might be a child itself)
+              const parentQuestion = allQuestions.find(q => 
+                (q.id === question.parentId || q.questionCode === question.parentId) && q.level === 1
+              )
+              if (parentQuestion) {
+                // Find the grandparent (the root parent)
+                const grandparentQuestion = allQuestions.find(q => 
+                  (q.id === parentQuestion.parentId || q.questionCode === parentQuestion.parentId) && q.level === 0
+                )
+                if (grandparentQuestion) {
+                  const grandparentIndex = allQuestions.indexOf(grandparentQuestion)
+                  parentNum = allQuestions.slice(0, grandparentIndex + 1).filter(q => q.level === 0).length
+                }
+              }
+              columnHeader = `    → Sub-child of Q${parentNum}: ${questionText}`
+            }
             
             // ALWAYS add the column to the row - this ensures all questions are in the CSV
             assessmentRow[columnHeader] = finalAnswerValue
             
             // Debug log for every 5th question and last few questions
-            if (questionNumber % 5 === 0 || questionNumber > allQuestions.length - 3) {
-              console.log(`Q${questionNumber} (${qCode}):`, {
+            if ((question.level === 0 && parentQuestionNumber % 5 === 0) || questionIndex > allQuestions.length - 3) {
+              console.log(`${question.level === 0 ? `Q${parentQuestionNumber}` : 'Child'} (${qCode}):`, {
                 hasAnswerData: !!answerData,
                 rawAnswerValue: answerValue,
                 finalAnswerValue: finalAnswerValue,
                 columnHeader: columnHeader.substring(0, 50)
               })
             }
-
-            questionNumber++
           })
           
           // Verify all questions were processed
-          const processedQuestions = questionNumber - 1
-          if (processedQuestions !== allQuestions.length) {
-            console.error(`❌ Mismatch: Processed ${processedQuestions} questions but expected ${allQuestions.length}`)
-          } else {
-            console.log(`✅ Completed export row for assessment ${assessment.id}: ${processedQuestions} questions processed`)
-          }
+          const processedQuestions = allQuestions.length
+          const parentQuestionsCount = allQuestions.filter(q => q.level === 0).length
+          console.log(`✅ Completed export row for assessment ${assessment.id}: ${processedQuestions} questions processed (${parentQuestionsCount} parents)`)
           
-          // Count how many questions have answers
+          // Count how many questions have answers (including child questions)
           const questionsWithAnswers = Object.keys(assessmentRow).filter(key => 
-            key.startsWith('Q') && 
+            (key.startsWith('Q') || key.includes('→')) && 
             assessmentRow[key] && 
             assessmentRow[key] !== 'No answer provided' &&
             assessmentRow[key].trim() !== ''
@@ -707,13 +848,18 @@ function AdminDashboard() {
           exportData.push(assessmentRow)
         } catch (err) {
           console.error(`Error processing assessment ${assessment.id}:`, err)
+          console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            assessmentId: assessment.id
+          })
           // Add basic row even if detailed fetch fails
           exportData.push({
             'Assessment ID': assessment.id,
             'Contact Name': assessment.contact_name || assessment.user_name || 'Anonymous',
             'Contact Email': assessment.contact_email || assessment.user_email || 'N/A',
             'Company Name': assessment.company_name || 'N/A',
-            'Error': 'Failed to load detailed data'
+            'Error': `Failed to load detailed data: ${err.message || 'Unknown error'}`
           })
         }
       }
@@ -734,15 +880,64 @@ function AdminDashboard() {
       const fixedHeaders = ['Assessment ID', 'Contact Name', 'Contact Email', 'Company Name', 'Contact Title', 'Submitted At']
       
       // Build question headers in the exact order questions were processed
+      // Use same user-friendly format as when building rows
+      // Maintain the hierarchical order (parent, then children, then next parent)
       const questionHeaders = []
-      let questionNum = 1
-      allQuestions.forEach(question => {
+      let parentQuestionNum = 0
+      
+      // Process questions in the same order as when building rows
+      allQuestions.forEach((question, index) => {
+        // Only increment counter for parent questions (level 0)
+        if (question.level === 0) {
+          parentQuestionNum++
+        }
+        
         const questionText = question.questionText || question.question_text || (question.questionCode || question.question_code)
-        const questionHeader = `Q${questionNum}: ${questionText}`
+        
+        // Only number parent questions (level 0)
+        // For child questions, show relationship to parent
+        let questionHeader = ''
+        if (question.level === 0) {
+          // Parent question - use Q1, Q2, Q3 format
+          const parentLabel = question.hasChildren ? ' (Parent)' : ''
+          questionHeader = `Q${parentQuestionNum}: ${questionText}${parentLabel}`
+        } else if (question.level === 1) {
+          // Child question - find parent and show relationship
+          let parentNum = '?'
+          // Find the parent question by looking backwards in the array
+          for (let i = index - 1; i >= 0; i--) {
+            const q = allQuestions[i]
+            if (q.level === 0 && (q.id === question.parentId || q.questionCode === question.parentId || q.question_code === question.parentId)) {
+              // Count how many parent questions come before this parent
+              parentNum = allQuestions.slice(0, i + 1).filter(q => q.level === 0).length
+              break
+            }
+          }
+          questionHeader = `  → Child of Q${parentNum}: ${questionText}`
+        } else {
+          // Sub-child question - find parent and show relationship
+          let parentNum = '?'
+          // Find the parent question (which is a child itself)
+          for (let i = index - 1; i >= 0; i--) {
+            const q = allQuestions[i]
+            if (q.level === 1 && (q.id === question.parentId || q.questionCode === question.parentId || q.question_code === question.parentId)) {
+              // Now find the grandparent
+              for (let j = i - 1; j >= 0; j--) {
+                const gp = allQuestions[j]
+                if (gp.level === 0 && (gp.id === q.parentId || gp.questionCode === q.parentId || gp.question_code === q.parentId)) {
+                  parentNum = allQuestions.slice(0, j + 1).filter(q => q.level === 0).length
+                  break
+                }
+              }
+              break
+            }
+          }
+          questionHeader = `    → Sub-child of Q${parentNum}: ${questionText}`
+        }
+        
         if (allHeaders.has(questionHeader)) {
           questionHeaders.push(questionHeader)
         }
-        questionNum++
       })
       
       // Add any remaining headers that weren't in the question list (shouldn't happen, but just in case)
@@ -912,7 +1107,15 @@ function AdminDashboard() {
           className={activeTab === 'questions' ? 'active' : ''}
           onClick={() => setActiveTab('questions')}
         >
-          ❓ Questions ({questions.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0) || 0})
+          ❓ Questions {(() => {
+            let totalCount = 0
+            questions.forEach(cat => {
+              if (cat.questions && Array.isArray(cat.questions)) {
+                totalCount += countAllQuestionsRecursively(cat.questions)
+              }
+            })
+            return totalCount || 0
+          })()}
         </button>
         <button
           className={activeTab === 'assessment-types' ? 'active' : ''}
@@ -1977,8 +2180,24 @@ function AdminDashboard() {
                         fontSize: '1.05em',
                         fontWeight: '500'
                       }}>
-                        Total Questions: <strong style={{ fontSize: '1.2em' }}>{filteredQuestions.length || questions.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0)}</strong>
-                        {filteredQuestions.length !== questions.reduce((sum, cat) => sum + (cat.questions?.length || 0), 0) && (
+                        Total Questions: <strong style={{ fontSize: '1.2em' }}>{(() => {
+                          let totalCount = 0
+                          questions.forEach(cat => {
+                            if (cat.questions && Array.isArray(cat.questions)) {
+                              totalCount += countAllQuestionsRecursively(cat.questions)
+                            }
+                          })
+                          return totalCount || 0
+                        })()}</strong>
+                        {filteredQuestions.length !== (() => {
+                          let totalCount = 0
+                          questions.forEach(cat => {
+                            if (cat.questions && Array.isArray(cat.questions)) {
+                              totalCount += countAllQuestionsRecursively(cat.questions)
+                            }
+                          })
+                          return totalCount || 0
+                        })() && (
                           <span style={{ marginLeft: '12px', opacity: 0.8 }}>
                             (Showing {filteredQuestions.length} filtered)
                           </span>
@@ -2518,53 +2737,131 @@ function AdminDashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredQuestions.map((q, index) => {
-                            // Find category name for this question
-                            const category = categories.find(cat => cat.id === q.categoryId) || 
-                                           questions.find(cat => cat.id === q.categoryId)
-                            const categoryName = q.categoryName || category?.name || 'N/A'
+                          {(() => {
+                            // Group questions: show parents first, then children if expanded
+                            const displayQuestions = []
+                            filteredQuestions.forEach(q => {
+                              // If it's a top-level question (no parent), add it
+                              if (!q.parentId) {
+                                displayQuestions.push(q)
+                                // If parent is expanded, add its children
+                                if (expandedParents.has(q.id) && q.children && q.children.length > 0) {
+                                  q.children.forEach(child => {
+                                    displayQuestions.push({ ...child, isChild: true, parentQuestion: q })
+                                  })
+                                }
+                              }
+                            })
                             
-                            return (
-                              <tr 
-                                key={q.id || q.question_code || index}
-                                style={{ 
-                                  borderBottom: index < filteredQuestions.length - 1 ? '1px solid #e8e8e8' : 'none',
-                                  background: index % 2 === 0 ? '#ffffff' : '#fafbff',
-                                  transition: 'all 0.3s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = '#f0f4ff'
-                                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.1)'
-                                  e.currentTarget.style.transform = 'translateX(4px)'
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = index % 2 === 0 ? '#ffffff' : '#fafbff'
-                                  e.currentTarget.style.boxShadow = 'none'
-                                  e.currentTarget.style.transform = 'translateX(0)'
-                                }}
-                              >
-                                <td style={{ 
-                                  padding: '18px 20px', 
-                                  fontWeight: '700', 
-                                  color: '#667eea',
-                                  fontSize: '1em'
-                                }}>
-                                  #{q.id || 'N/A'}
-                                </td>
-                                <td style={{ 
-                                  padding: '18px 20px', 
-                                  maxWidth: '450px',
-                                  lineHeight: '1.5'
-                                }}>
-                                  <div style={{ 
-                                    fontSize: '1em', 
-                                    color: '#2c3e50', 
-                                    fontWeight: '500',
-                                    display: 'block'
-                                  }}>
-                                    {q.questionText || q.question_text || 'N/A'}
-                                  </div>
-                                </td>
+                            return displayQuestions.map((q, index) => {
+                              // Find category name for this question
+                              const category = categories.find(cat => cat.id === q.categoryId) || 
+                                             questions.find(cat => cat.id === q.categoryId)
+                              const categoryName = q.categoryName || category?.name || 'N/A'
+                              const isChild = q.isChild || q.parentId
+                              const isParent = q.hasChildren || (q.children && q.children.length > 0)
+                              const isExpanded = expandedParents.has(q.id)
+                              
+                              return (
+                                <React.Fragment key={q.id || q.question_code || index}>
+                                  <tr 
+                                    style={{ 
+                                      borderBottom: '1px solid #e8e8e8',
+                                      background: isChild ? '#f8f9ff' : (index % 2 === 0 ? '#ffffff' : '#fafbff'),
+                                      transition: 'all 0.3s ease',
+                                      borderLeft: isChild ? '4px solid #667eea' : 'none'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = '#f0f4ff'
+                                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.1)'
+                                      e.currentTarget.style.transform = 'translateX(4px)'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = isChild ? '#f8f9ff' : (index % 2 === 0 ? '#ffffff' : '#fafbff')
+                                      e.currentTarget.style.boxShadow = 'none'
+                                      e.currentTarget.style.transform = 'translateX(0)'
+                                    }}
+                                  >
+                                    <td style={{ 
+                                      padding: '18px 20px', 
+                                      fontWeight: '700', 
+                                      color: '#667eea',
+                                      fontSize: '1em',
+                                      paddingLeft: isChild ? '40px' : '20px'
+                                    }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        {isParent && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              const newExpanded = new Set(expandedParents)
+                                              if (newExpanded.has(q.id)) {
+                                                newExpanded.delete(q.id)
+                                              } else {
+                                                newExpanded.add(q.id)
+                                              }
+                                              setExpandedParents(newExpanded)
+                                            }}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              cursor: 'pointer',
+                                              fontSize: '1.2em',
+                                              padding: '4px',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              color: '#667eea'
+                                            }}
+                                            title={isExpanded ? 'Collapse children' : 'Expand children'}
+                                          >
+                                            {isExpanded ? '▼' : '▶'}
+                                          </button>
+                                        )}
+                                        {!isParent && isChild && <span style={{ width: '24px', display: 'inline-block' }}>└</span>}
+                                        <span>#{q.id || 'N/A'}</span>
+                                        {isParent && (
+                                          <span style={{
+                                            padding: '4px 8px',
+                                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                            color: 'white',
+                                            borderRadius: '12px',
+                                            fontSize: '0.7em',
+                                            fontWeight: '600',
+                                            marginLeft: '4px'
+                                          }}>
+                                            Parent
+                                          </span>
+                                        )}
+                                        {isChild && (
+                                          <span style={{
+                                            padding: '4px 8px',
+                                            background: 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)',
+                                            color: 'white',
+                                            borderRadius: '12px',
+                                            fontSize: '0.7em',
+                                            fontWeight: '600',
+                                            marginLeft: '4px'
+                                          }}>
+                                            Child
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ 
+                                      padding: '18px 20px', 
+                                      maxWidth: '450px',
+                                      lineHeight: '1.5',
+                                      paddingLeft: isChild ? '40px' : '20px'
+                                    }}>
+                                      <div style={{ 
+                                        fontSize: '1em', 
+                                        color: '#2c3e50', 
+                                        fontWeight: '500',
+                                        display: 'block'
+                                      }}>
+                                        {q.questionText || q.question_text || 'N/A'}
+                                      </div>
+                                    </td>
                                 <td style={{ 
                                   padding: '18px 20px', 
                                   maxWidth: '350px',
@@ -2581,50 +2878,50 @@ function AdminDashboard() {
                                     )}
                                   </div>
                                 </td>
-                                <td style={{ padding: '18px 20px' }}>
-                                  <span style={{
-                                    padding: '6px 14px',
-                                    background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
-                                    color: '#2e7d32',
-                                    borderRadius: '20px',
-                                    fontSize: '0.85em',
-                                    fontWeight: '600',
-                                    display: 'inline-block',
-                                    border: '1px solid #a5d6a7'
-                                  }}>
-                                    {categoryName}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '18px 20px', textAlign: 'left' }}>
-                                  <div style={{ 
-                                    fontSize: '0.9em', 
-                                    color: '#555',
-                                    fontWeight: '500'
-                                  }}>
-                                    {q.created_at || q.createdAt ? formatDateOnly(q.created_at || q.createdAt) : (
-                                      <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td style={{ padding: '18px 20px', textAlign: 'left' }}>
-                                  <div style={{ 
-                                    fontSize: '0.9em', 
-                                    color: '#555',
-                                    fontWeight: '500'
-                                  }}>
-                                    {q.updated_at || q.updatedAt ? formatDateOnly(q.updated_at || q.updatedAt) : (
-                                      <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td style={{ padding: '18px 20px' }}>
-                                  <div style={{ 
-                                    display: 'flex', 
-                                    gap: '10px', 
-                                    flexWrap: 'nowrap', 
-                                    justifyContent: 'center',
-                                    alignItems: 'center'
-                                  }}>
+                                    <td style={{ padding: '18px 20px' }}>
+                                      <span style={{
+                                        padding: '6px 14px',
+                                        background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)',
+                                        color: '#2e7d32',
+                                        borderRadius: '20px',
+                                        fontSize: '0.85em',
+                                        fontWeight: '600',
+                                        display: 'inline-block',
+                                        border: '1px solid #a5d6a7'
+                                      }}>
+                                        {categoryName}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '18px 20px', textAlign: 'left' }}>
+                                      <div style={{ 
+                                        fontSize: '0.9em', 
+                                        color: '#555',
+                                        fontWeight: '500'
+                                      }}>
+                                        {q.created_at || q.createdAt ? formatDateOnly(q.created_at || q.createdAt) : (
+                                          <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '18px 20px', textAlign: 'left' }}>
+                                      <div style={{ 
+                                        fontSize: '0.9em', 
+                                        color: '#555',
+                                        fontWeight: '500'
+                                      }}>
+                                        {q.updated_at || q.updatedAt ? formatDateOnly(q.updated_at || q.updatedAt) : (
+                                          <span style={{ color: '#999', fontStyle: 'italic' }}>N/A</span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '18px 20px' }}>
+                                      <div style={{ 
+                                        display: 'flex', 
+                                        gap: '10px', 
+                                        flexWrap: 'nowrap', 
+                                        justifyContent: 'center',
+                                        alignItems: 'center'
+                                      }}>
                                     <button
                                       onClick={() => setViewingQuestion({ ...q, categoryName })}
                                       style={{ 
@@ -2752,11 +3049,13 @@ function AdminDashboard() {
                                       <span style={{ fontSize: '1.1em' }}>🗑️</span>
                                       <span>Delete</span>
                                     </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                </React.Fragment>
+                              )
+                            })
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -3213,12 +3512,58 @@ function AdminDashboard() {
                   setEditingAssessmentType(viewingAssessmentType)
                   setShowAssessmentTypeModal(true)
                 }}
-                className="btn-primary"
-                style={{ marginRight: '10px' }}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s',
+                  marginRight: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                }}
               >
                 ✏️ Edit
               </button>
-              <button onClick={() => setViewingAssessmentType(null)} className="btn-close">
+              <button 
+                onClick={() => setViewingAssessmentType(null)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#6c757d',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(108, 117, 125, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#5a6268'
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(108, 117, 125, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#6c757d'
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(108, 117, 125, 0.3)'
+                }}
+              >
                 Close
               </button>
             </div>
@@ -3311,12 +3656,58 @@ function AdminDashboard() {
                   setEditingUser(viewingUser)
                   setShowUserModal(true)
                 }}
-                className="btn-primary"
-                style={{ marginRight: '10px' }}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s',
+                  marginRight: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                }}
               >
                 ✏️ Edit
               </button>
-              <button onClick={() => setViewingUser(null)} className="btn-close">
+              <button 
+                onClick={() => setViewingUser(null)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#6c757d',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(108, 117, 125, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#5a6268'
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(108, 117, 125, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#6c757d'
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(108, 117, 125, 0.3)'
+                }}
+              >
                 Close
               </button>
             </div>
@@ -3407,12 +3798,58 @@ function AdminDashboard() {
                   setEditingCategory(viewingCategory)
                   setShowCategoryModal(true)
                 }}
-                className="btn-primary"
-                style={{ marginRight: '10px' }}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s',
+                  marginRight: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                }}
               >
                 ✏️ Edit
               </button>
-              <button onClick={() => setViewingCategory(null)} className="btn-close">
+              <button 
+                onClick={() => setViewingCategory(null)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#6c757d',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(108, 117, 125, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#5a6268'
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(108, 117, 125, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#6c757d'
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(108, 117, 125, 0.3)'
+                }}
+              >
                 Close
               </button>
             </div>
@@ -3494,7 +3931,14 @@ function AdminDashboard() {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer" style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '20px 30px',
+              borderTop: '2px solid #e0e0e0'
+            }}>
               <button
                 onClick={async () => {
                   // Ensure categories are loaded before opening modal
@@ -3511,12 +3955,63 @@ function AdminDashboard() {
                   setEditingQuestion(viewingQuestion)
                   setShowQuestionModal(true)
                 }}
-                className="btn-primary"
-                style={{ marginRight: '10px' }}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  minWidth: '100px'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)'
+                }}
               >
                 ✏️ Edit
               </button>
-              <button onClick={() => setViewingQuestion(null)} className="btn-close">
+              <button 
+                onClick={() => setViewingQuestion(null)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#6c757d',
+                  color: 'white',
+                  fontWeight: '600',
+                  fontSize: '1em',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(108, 117, 125, 0.3)',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '100px'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#5a6268'
+                  e.target.style.transform = 'translateY(-2px)'
+                  e.target.style.boxShadow = '0 6px 16px rgba(108, 117, 125, 0.4)'
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#6c757d'
+                  e.target.style.transform = 'translateY(0)'
+                  e.target.style.boxShadow = '0 4px 12px rgba(108, 117, 125, 0.3)'
+                }}
+              >
                 Close
               </button>
             </div>

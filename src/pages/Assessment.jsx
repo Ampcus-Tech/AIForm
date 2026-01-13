@@ -175,41 +175,48 @@ function Assessment() {
         
         setCategories(response.categories)
         
-        // Flatten all questions into a single list for single question mode
+        // Debug: Log nested structure
+        console.log('🔍 Checking nested question structure:')
+        response.categories.forEach(category => {
+          if (category.questions && Array.isArray(category.questions)) {
+            category.questions.forEach(question => {
+              if (question.children && question.children.length > 0) {
+                console.log(`  Parent: "${question.questionText?.substring(0, 40)}..." (${question.questionType}) has ${question.children.length} children`)
+                question.children.forEach((child, idx) => {
+                  console.log(`    Child ${idx + 1}: "${child.questionText?.substring(0, 40)}..." (${child.questionType})`)
+                  if (child.children && child.children.length > 0) {
+                    console.log(`      ✅ Has ${child.children.length} sub-children!`)
+                    child.children.forEach((subChild, subIdx) => {
+                      console.log(`        Sub-child ${subIdx + 1}: "${subChild.questionText?.substring(0, 40)}..." (${subChild.questionType})`)
+                    })
+                  }
+                })
+              }
+            })
+          }
+        })
+        
+        // Flatten only parent questions into a single list for single question mode
+        // Child questions will be shown inline with their parents, not as separate steps
         const flattenedQuestions = []
         let questionNumber = 1
         
         response.categories.forEach(category => {
           if (category.questions && Array.isArray(category.questions)) {
             category.questions.forEach(question => {
-              // Skip group questions (they don't have answers themselves)
-              if (question.questionType !== 'group') {
+              // Only add top-level questions (no parent_id) - skip group questions and child questions
+              if (question.questionType !== 'group' && !question.parent_id && !question.parentId) {
                 flattenedQuestions.push({
                   ...question,
                   questionNumber: questionNumber,
                   categoryName: category.name,
                   categoryId: category.id,
                   answerKey: String(questionNumber), // Use sequential number as key (1, 2, 3...)
-                  originalQuestionCode: question.questionCode || `q_${question.id}` // Keep original for reference
+                  originalQuestionCode: question.questionCode || `q_${question.id}`, // Keep original for reference
+                  // Preserve children structure for inline display
+                  children: question.children || []
                 })
                 questionNumber++
-              }
-              
-              // Add child questions if they exist
-              if (question.children && Array.isArray(question.children) && question.children.length > 0) {
-                question.children.forEach(child => {
-                  flattenedQuestions.push({
-                    ...child,
-                    questionNumber: questionNumber,
-                    categoryName: category.name,
-                    categoryId: category.id,
-                    parentQuestion: question,
-                    parentId: question.id, // Ensure parentId is set for matching
-                    answerKey: String(questionNumber), // Use sequential number as key
-                    originalQuestionCode: child.questionCode || `q_${child.id}` // Keep original for reference
-                  })
-                  questionNumber++
-                })
               }
             })
           }
@@ -456,9 +463,30 @@ function Assessment() {
     const answerKey = questionInList?.answerKey || String(questionNumber)
     const value = formData.answers[answerKey]
     
-    // For yes_no questions, check if we should show child questions
+    // For yes_no questions, check if we should show child questions when answered "yes"
+    // For group type questions, always show their children
+    // For other question types (text, scale, etc.), always show children if they exist
     const yesNoValue = String(value || '').toLowerCase().trim()
-    const showChildren = question.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true') && question.children && question.children.length > 0
+    const isYesNoAnsweredYes = question.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+    const isGroupType = question.questionType === 'group'
+    const isOtherTypeWithChildren = question.questionType !== 'yes_no' && question.questionType !== 'group' && question.children && question.children.length > 0
+    
+    // Show children if:
+    // 1. It's a yes_no question answered "yes", OR
+    // 2. It's a group type question (always show), OR
+    // 3. It's any other type with children (always show for text, scale, etc.)
+    const showChildren = (isYesNoAnsweredYes || isGroupType || isOtherTypeWithChildren) && question.children && question.children.length > 0
+    
+    // Debug logging for nested children
+    if (question.children && question.children.length > 0) {
+      console.log(`🔍 Question ${questionNumber} (${question.questionText?.substring(0, 30)}...):`, {
+        questionType: question.questionType,
+        hasChildren: question.children.length,
+        childrenWithSubChildren: question.children.filter(c => c.children && c.children.length > 0).length,
+        showChildren: showChildren,
+        value: value
+      })
+    }
 
     return (
       <div key={question.id} className="question-group">
@@ -478,7 +506,7 @@ function Assessment() {
           formData={formData}
         />
         
-        {/* Render child questions if parent is answered "yes" */}
+        {/* Render child questions if parent is answered "yes" - supports nested children */}
         {showChildren && (
           <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #667eea' }}>
             {question.children.map((child, childIndex) => {
@@ -503,6 +531,25 @@ function Assessment() {
               // Use the original questionCode or generate one
               const childQuestionCode = childInList?.originalQuestionCode || child.questionCode || `q_${child.id}`
               
+              // Check if this child question has its own children (sub-child questions)
+              // Support both yes_no (when answered yes) and group type questions
+              const childValue = formData.answers[childAnswerKey] || ''
+              const childYesNoValue = String(childValue || '').toLowerCase().trim()
+              const isChildYesNoAnsweredYes = child.questionType === 'yes_no' && (childYesNoValue === 'yes' || childYesNoValue === '1' || childYesNoValue === 'true')
+              const isChildGroupType = child.questionType === 'group'
+              const showSubChildren = (isChildYesNoAnsweredYes || isChildGroupType) && child.children && child.children.length > 0
+              
+              // Debug logging for sub-children
+              if (child.children && child.children.length > 0) {
+                console.log(`    🔍 Child "${child.questionText?.substring(0, 30)}...":`, {
+                  childType: child.questionType,
+                  childValue: childValue,
+                  hasSubChildren: child.children.length,
+                  showSubChildren: showSubChildren,
+                  subChildrenTypes: child.children.map(sc => sc.questionType)
+                })
+              }
+              
               return (
                 <div key={child.id || childQuestionCode} className="question-group">
                   <label className="question-label">
@@ -514,10 +561,46 @@ function Assessment() {
                   )}
                   <QuestionInput
                     question={{ ...child, questionCode: childAnswerKey }}
-                    value={formData.answers[childAnswerKey] || ''}
+                    value={childValue}
                     onChange={handleChange}
                     formData={formData}
                   />
+                  
+                  {/* Render sub-child questions (nested children) if child is answered "yes" */}
+                  {showSubChildren && (
+                    <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #48bb78' }}>
+                      {child.children.map((subChild, subChildIndex) => {
+                        const subChildInList = allQuestionsList.find(q => {
+                          if (q.id === subChild.id) return true
+                          if (q.questionCode === subChild.questionCode && q.id === subChild.id) return true
+                          if ((q.parentId === child.id || q.parentQuestion?.id === child.id) && 
+                              (q.questionCode === subChild.questionCode || q.originalQuestionCode === subChild.questionCode)) return true
+                          return false
+                        })
+                        
+                        const subChildAnswerKey = subChildInList?.answerKey || 
+                                                  (childInList?.answerKey ? `${childInList.answerKey}_subchild_${subChildIndex}` : `${childAnswerKey}_subchild_${subChildIndex}`)
+                        
+                        return (
+                          <div key={subChild.id || subChildAnswerKey} className="question-group">
+                            <label className="question-label">
+                              {subChild.questionText || subChild.question_text}
+                              {subChild.isRequired && <span className="required">*</span>}
+                            </label>
+                            {subChild.helpText && (
+                              <p className="question-help">{subChild.helpText}</p>
+                            )}
+                            <QuestionInput
+                              question={{ ...subChild, questionCode: subChildAnswerKey }}
+                              value={formData.answers[subChildAnswerKey] || ''}
+                              onChange={handleChange}
+                              formData={formData}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1076,47 +1159,73 @@ function Assessment() {
               />
             </div>
 
-            {/* Show child questions if parent is yes_no and answered "yes" */}
-            {currentQuestion.questionType === 'yes_no' && 
-             (currentAnswer === 'yes' || currentAnswer === 'Yes' || currentAnswer === '1') &&
-             currentQuestion.children && 
-             currentQuestion.children.length > 0 && (
-              <div style={{ marginTop: '20px', paddingLeft: '20px', borderLeft: '4px solid #667eea' }}>
-                {currentQuestion.children.map((child, childIndex) => {
-                  // Find child question in allQuestionsList to get its answerKey
-                  const childInList = allQuestionsList.find(q => {
-                    if (q.id === child.id) return true
-                    if (q.questionCode === child.questionCode && q.id === child.id) return true
-                    if ((q.parentId === currentQuestion.id || q.parentQuestion?.id === currentQuestion.id) && 
-                        (q.questionCode === child.questionCode || q.originalQuestionCode === child.questionCode)) return true
-                    return false
-                  })
+            {/* Show child questions inline with parent - for all question types that have children */}
+            {(() => {
+              // For yes_no questions, show children only when answered "yes"
+              // For other question types (text, scale, etc.), always show children if they exist
+              const yesNoValue = String(currentAnswer || '').toLowerCase().trim()
+              const isYesNoAnsweredYes = currentQuestion.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+              const isGroupType = currentQuestion.questionType === 'group'
+              const isOtherTypeWithChildren = currentQuestion.questionType !== 'yes_no' && currentQuestion.questionType !== 'group' && currentQuestion.children && currentQuestion.children.length > 0
+              
+              const showChildren = (isYesNoAnsweredYes || isGroupType || isOtherTypeWithChildren) && currentQuestion.children && currentQuestion.children.length > 0
+              
+              if (!showChildren) return null
+              
+              // Recursive function to render child questions and their sub-children
+              const renderChildQuestions = (children, level = 0) => {
+                return children.map((child, childIndex) => {
+                  const childAnswerKey = child.questionCode || `q_${child.id}`
+                  const childValue = formData.answers[childAnswerKey] || ''
                   
-                  // Use the answerKey from allQuestionsList if found
-                  const childAnswerKey = childInList?.answerKey || 
-                                        child.questionCode || 
-                                        `q_${child.id}`
+                  // Check if this child has its own children (sub-children)
+                  const childYesNoValue = String(childValue || '').toLowerCase().trim()
+                  const isChildYesNoAnsweredYes = child.questionType === 'yes_no' && (childYesNoValue === 'yes' || childYesNoValue === '1' || childYesNoValue === 'true')
+                  const isChildGroupType = child.questionType === 'group'
+                  const isChildOtherTypeWithChildren = child.questionType !== 'yes_no' && child.questionType !== 'group' && child.children && child.children.length > 0
+                  const showSubChildren = (isChildYesNoAnsweredYes || isChildGroupType || isChildOtherTypeWithChildren) && child.children && child.children.length > 0
                   
                   return (
-                    <div key={child.id || childAnswerKey} className="question-group" style={{ marginBottom: '20px' }}>
-                      <label className="question-label">
+                    <div key={child.id || childAnswerKey} className="question-group" style={{ 
+                      marginBottom: '20px',
+                      marginTop: childIndex === 0 ? '20px' : '15px',
+                      paddingLeft: `${20 + (level * 20)}px`,
+                      borderLeft: `${4 + level}px solid ${level === 0 ? '#667eea' : '#48bb78'}`,
+                      background: level === 0 ? '#f8f9ff' : '#f0fff4',
+                      padding: '15px',
+                      borderRadius: '8px'
+                    }}>
+                      <label className="question-label" style={{ fontSize: level === 0 ? '1em' : '0.95em' }}>
                         {child.questionText || child.question_text}
                         {child.isRequired && <span className="required">*</span>}
                       </label>
                       {child.helpText && (
-                        <p className="question-help">{child.helpText}</p>
+                        <p className="question-help" style={{ fontSize: '0.9em' }}>{child.helpText}</p>
                       )}
                       <QuestionInput
                         question={{ ...child, questionCode: childAnswerKey }}
-                        value={formData.answers[childAnswerKey] || ''}
+                        value={childValue}
                         onChange={handleChange}
                         formData={formData}
                       />
+                      
+                      {/* Recursively render sub-children if they exist */}
+                      {showSubChildren && (
+                        <div style={{ marginTop: '15px' }}>
+                          {renderChildQuestions(child.children, level + 1)}
+                        </div>
+                      )}
                     </div>
                   )
-                })}
-              </div>
-            )}
+                })
+              }
+              
+              return (
+                <div style={{ marginTop: '20px' }}>
+                  {renderChildQuestions(currentQuestion.children, 0)}
+                </div>
+              )
+            })()}
 
             <div className="form-actions" style={{ marginTop: '30px', justifyContent: 'space-between' }}>
               <button

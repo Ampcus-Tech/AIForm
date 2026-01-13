@@ -521,36 +521,151 @@ function QuestionModal({ question, categories, onClose, onSave }) {
                 border: '2px solid #e0e7ff',
                 marginBottom: '24px'
               }}>
-                <h4 style={{ margin: '0 0 16px 0', color: '#667eea', fontSize: '1.1em' }}>📋 Multiple Choice Options</h4>
-                <div className="form-group">
-                  <label style={labelStyle}>Options (one per line)</label>
-                  <textarea
-                    value={formData.options?.options ? formData.options.options.join('\n') : ''}
-                    onChange={(e) => {
-                      const optionsList = e.target.value.split('\n').filter(o => o.trim())
-                      updateOptions('options', optionsList)
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h4 style={{ margin: 0, color: '#667eea', fontSize: '1.1em' }}>📋 Multiple Choice Options</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentOptions = formData.options?.options || []
+                      updateOptions('options', [...currentOptions, ''])
                     }}
-                    rows="5"
-                    placeholder="Option 1&#10;Option 2&#10;Option 3"
                     style={{
-                      ...inputStyle,
-                      resize: 'vertical',
-                      fontFamily: 'monospace',
-                      whiteSpace: 'pre-wrap',
-                      wordWrap: 'break-word',
-                      overflowWrap: 'break-word',
-                      overflow: 'auto'
+                      padding: '8px 16px',
+                      borderRadius: '8px',
+                      border: '2px solid #667eea',
+                      background: 'white',
+                      color: '#667eea',
+                      fontWeight: '600',
+                      fontSize: '0.9em',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}
-                    onFocus={(e) => Object.assign(e.target.style, focusStyle)}
-                    onBlur={(e) => Object.assign(e.target.style, blurStyle)}
-                  />
+                    onMouseEnter={(e) => {
+                      e.target.style.background = '#667eea'
+                      e.target.style.color = 'white'
+                      e.target.style.transform = 'translateY(-2px)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = 'white'
+                      e.target.style.color = '#667eea'
+                      e.target.style.transform = 'translateY(0)'
+                    }}
+                  >
+                    ➕ Add Option
+                  </button>
+                </div>
+                <div className="form-group">
+                  <label style={labelStyle}>Options</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {(formData.options?.options && formData.options.options.length > 0) ? (
+                      formData.options.options.map((option, index) => (
+                        <div key={index} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '12px',
+                          background: 'white',
+                          borderRadius: '8px',
+                          border: '2px solid #e0e0e0',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = '#667eea'
+                          e.currentTarget.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.1)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#e0e0e0'
+                          e.currentTarget.style.boxShadow = 'none'
+                        }}
+                        >
+                          <span style={{
+                            minWidth: '30px',
+                            color: '#667eea',
+                            fontWeight: '600',
+                            fontSize: '0.9em'
+                          }}>
+                            {index + 1}.
+                          </span>
+                          <input
+                            type="text"
+                            value={option}
+                            onChange={(e) => {
+                              const currentOptions = [...(formData.options?.options || [])]
+                              currentOptions[index] = e.target.value
+                              updateOptions('options', currentOptions)
+                            }}
+                            placeholder={`Option ${index + 1}`}
+                            style={{
+                              ...inputStyle,
+                              flex: 1,
+                              margin: 0,
+                              border: 'none',
+                              padding: '8px 12px',
+                              background: 'transparent'
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.background = '#f8f9ff'
+                              e.target.style.borderRadius = '6px'
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.background = 'transparent'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currentOptions = [...(formData.options?.options || [])]
+                              currentOptions.splice(index, 1)
+                              updateOptions('options', currentOptions.length > 0 ? currentOptions : [])
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              border: 'none',
+                              background: '#ff5252',
+                              color: 'white',
+                              fontWeight: '600',
+                              fontSize: '0.85em',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              minWidth: '70px'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.background = '#ff1744'
+                              e.target.style.transform = 'scale(1.05)'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background = '#ff5252'
+                              e.target.style.transform = 'scale(1)'
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{
+                        padding: '20px',
+                        textAlign: 'center',
+                        color: '#999',
+                        background: 'white',
+                        borderRadius: '8px',
+                        border: '2px dashed #e0e0e0'
+                      }}>
+                        No options added yet. Click "Add Option" to get started.
+                      </div>
+                    )}
+                  </div>
                   <small style={{ 
                     color: '#666', 
                     fontSize: '0.85em',
-                    marginTop: '6px',
+                    marginTop: '12px',
                     display: 'block'
                   }}>
-                    💡 Enter each option on a new line
+                    💡 Click "Add Option" to add new choices. Each option will appear as a separate choice in the question.
                   </small>
                 </div>
               </div>
