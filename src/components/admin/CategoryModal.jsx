@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import RichTextEditor from '../common/RichTextEditor'
 
 function CategoryModal({ category, adminAPI, onClose, onSave }) {
   const [assessmentTypes, setAssessmentTypes] = useState([])
@@ -187,34 +188,11 @@ function CategoryModal({ category, adminAPI, onClose, onSave }) {
               }}>
                 Description
               </label>
-              <textarea
+              <RichTextEditor
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows="3"
-                placeholder="Describe this category..."
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  border: '2px solid #e0e0e0',
-                  fontSize: '1em',
-                  fontFamily: 'inherit',
-                  resize: 'vertical',
-                  transition: 'all 0.2s',
-                  outline: 'none',
-                  whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word',
-                  overflowWrap: 'break-word',
-                  overflow: 'auto'
-                }}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#667eea'
-                  e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)'
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#e0e0e0'
-                  e.target.style.boxShadow = 'none'
-                }}
+                onChange={(html) => setFormData({ ...formData, description: html })}
+                placeholder="Describe this category... Use the toolbar for headings, bold, lists."
+                minHeight={120}
               />
             </div>
             <div className="form-group" style={{ marginBottom: '24px' }}>

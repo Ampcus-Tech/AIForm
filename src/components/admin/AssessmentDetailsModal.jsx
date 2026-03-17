@@ -1,15 +1,69 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { formatDate } from '../../utils/formatDate'
 import { formatAnswer } from '../../utils/formatAnswer'
+import { assessmentTypesAPI } from '../../services/api'
+import { SafeDescriptionHtml } from '../common/RichTextEditor'
 
 /**
  * Assessment Details Modal - displays full assessment information including answers
  * Updated UI to match the cleaner design from the second image
  */
 function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClose }) {
+  const [assessmentType, setAssessmentType] = useState(null)
+
+  useEffect(() => {
+    if (!assessment?.assessment_type_id) return
+    let cancelled = false
+    assessmentTypesAPI.getById(assessment.assessment_type_id).then((res) => {
+      if (!cancelled && res?.success && res?.assessmentType) setAssessmentType(res.assessmentType)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [assessment?.assessment_type_id])
+
+  // Build syntheticCodeToText, ordered root codes, full form-order sequence, code -> category, and root code -> text (for placeholder parents)
+  const syntheticCodeToText = {}
+  const orderedRootQuestionCodes = []
+  const codeToCategoryFromType = {}
+  const orderedRootCodeToText = {}
+  // Map questionCode -> question object from assessment type (includes synthetic child codes like 4_child_0)
+  const typeQuestionByCode = {}
+  const formOrderSequence = []
+  const orderedCategoryNames = []
+  if (assessmentType?.categories) {
+    const cats = [...(assessmentType.categories || [])].sort((a, b) => (a.display_order ?? a.displayOrder ?? 999) - (b.display_order ?? b.displayOrder ?? 999))
+    let formIndex = 0
+    cats.forEach(cat => {
+      const catName = cat.name || cat.categoryName || ''
+      if (catName) orderedCategoryNames.push(catName)
+      const roots = (cat.questions || []).filter(q => !(q.parent_id ?? q.parentId)).sort((a, b) => (a.display_order ?? a.displayOrder ?? 999) - (b.display_order ?? b.displayOrder ?? 999))
+      roots.forEach(q => {
+        formIndex++
+        const code = q.questionCode ?? q.question_code
+        if (code) {
+          const codeStr = String(code)
+          orderedRootQuestionCodes.push(codeStr)
+          if (catName) codeToCategoryFromType[codeStr] = catName
+          const rootText = q.questionText ?? q.question_text
+          if (rootText) orderedRootCodeToText[codeStr] = rootText
+          typeQuestionByCode[codeStr] = q
+          formOrderSequence.push(codeStr)
+        }
+        const children = (q.children || []).sort((a, b) => (a.display_order ?? a.displayOrder ?? 999) - (b.display_order ?? b.displayOrder ?? 999))
+        children.forEach((ch, j) => {
+          const key = `${formIndex}_child_${j}`
+          const text = ch.questionText ?? ch.question_text
+          if (text) syntheticCodeToText[key] = text
+          typeQuestionByCode[key] = ch
+          formOrderSequence.push(key)
+        })
+      })
+    })
+  }
+
   // Helper function to format answer with labels for scale questions
   const formatAnswerLocal = (answer, questionCode, questionType) => {
-    const question = allQuestionsMap?.[questionCode]
+    const codeStr = questionCode != null ? String(questionCode) : ''
+    const question = allQuestionsMap?.[questionCode] || (codeStr ? typeQuestionByCode[codeStr] : null)
     return formatAnswer(answer, questionCode, questionType, question)
   }
 
@@ -37,11 +91,36 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
     console.log('📋 dynamicAnswersArray:', dynamicAnswersArray)
     
     if (Array.isArray(dynamicAnswersArray) && dynamicAnswersArray.length > 0) {
+      // Build id -> category and questionCode -> category so child/subchild answers go in parent's section
+      const idToCategory = {}
+      const codeToCategory = {}
+      dynamicAnswersArray.forEach(it => {
+        const id = it.id ?? it.question_id
+        const cat = it.category_name || it.categoryName
+        const code = it.question_code || it.questionCode
+        if (id != null && cat && String(cat).trim() && cat !== 'N/A') idToCategory[id] = cat
+        if (code && cat && String(cat).trim() && cat !== 'N/A') codeToCategory[String(code)] = cat
+      })
+
       console.log(`📋 Processing ${dynamicAnswersArray.length} dynamic answers...`)
       dynamicAnswersArray.forEach((item, index) => {
         console.log(`Processing answer ${index + 1}:`, item)
         const qCode = item.question_code || item.questionCode || item.question_id
         if (qCode) {
+          // Infer parent: by id/code, or by form order so child attaches to correct parent and shows in sequence
+          let parentId = item.parent_id ?? item.parentId ?? null
+          const qCodeStr = String(qCode)
+          const childMatch = qCodeStr.match(/^(\d+)_child_(\d+)$/)
+          const subchildMatch = qCodeStr.match(/^(.+)_child_\d+$/) && !childMatch
+          if (childMatch) {
+            const parentNum = parseInt(childMatch[1], 10)
+            if (orderedRootQuestionCodes.length > 0 && parentNum >= 1 && parentNum <= orderedRootQuestionCodes.length) {
+              parentId = orderedRootQuestionCodes[parentNum - 1]
+            } else {
+              parentId = parentNum
+            }
+          } else if (subchildMatch) parentId = qCodeStr.replace(/_child_\d+$/, '')
+
           // Include ALL answers, even if empty - we want to show all questions that were answered
           // The answer value might be empty string, null, or undefined, but we still want to show the question
           let answerValue = item.answer_json || 
@@ -59,22 +138,31 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
             }
           }
           
-          // Use question text directly from dynamicAnswers (from database) - this is the source of truth
-          // This ensures we show dynamic questions regardless of allQuestionsMap
-          // IMPORTANT: question_text should always come from the database via dynamicAnswers
+          // For synthetic codes (e.g. 3_child_0), prefer assessment-type label so "If No, Why..." isn't overwritten by wrong API text
+          const isSyntheticChild = /^\d+_child_\d+$/.test(qCodeStr)
+          const typeLabel = syntheticCodeToText[qCodeStr]
           let questionText = item.question_text || item.questionText
+          if (isSyntheticChild && typeLabel) {
+            questionText = typeLabel
+          }
           if (!questionText || questionText.trim() === '' || questionText === 'N/A') {
-            // Fallback to allQuestionsMap only if database doesn't have it
             questionText = allQuestionsMap?.[qCode]?.questionText || allQuestionsMap?.[qCode]?.question_text
           }
-          // Final fallback - show question code if no text available
+          if (!questionText || questionText.trim() === '' || questionText === 'N/A') {
+            questionText = typeLabel || syntheticCodeToText[String(qCode)]
+          }
           if (!questionText || questionText.trim() === '' || questionText === 'N/A') {
             questionText = `Question ${qCode}`
           }
           
           let categoryName = item.category_name || item.categoryName
           if (!categoryName || categoryName.trim() === '' || categoryName === 'N/A') {
-            categoryName = allQuestionsMap?.[qCode]?.categoryName || 'General'
+            categoryName = codeToCategoryFromType[String(qCode)] || allQuestionsMap?.[qCode]?.categoryName || 'Uncategorized'
+          }
+          if (parentId != null && (categoryName === 'Uncategorized' || categoryName === 'General' || !categoryName || !categoryName.trim())) {
+            const parentCodeStr = String(parentId)
+            const parentCat = codeToCategoryFromType[parentCodeStr] || (typeof parentId === 'number' ? (idToCategory[parentId] || codeToCategory[parentCodeStr]) : codeToCategory[parentCodeStr])
+            if (parentCat) categoryName = parentCat
           }
           
           const questionType = item.question_type || item.questionType || allQuestionsMap?.[qCode]?.questionType || ''
@@ -109,9 +197,9 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
             questionText: questionText,
             questionType: questionType,
             categoryName: categoryName,
-            // Include hierarchy fields from dynamicAnswers
-            parent_id: item.parent_id || item.parentId,
-            parentId: item.parent_id || item.parentId,
+            // Include hierarchy fields (use inferred parentId for synthetic codes like 2_child_0)
+            parent_id: parentId ?? item.parent_id ?? item.parentId,
+            parentId: parentId ?? item.parent_id ?? item.parentId,
             id: item.id,
             display_order: item.display_order || item.displayOrder,
             // Include question info for hierarchy building
@@ -138,7 +226,7 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
         
         Object.keys(answersObj).forEach(key => {
           if (!allAnswers[key] && answersObj[key] !== null && answersObj[key] !== undefined && String(answersObj[key]).trim() !== '') {
-            const categoryName = allQuestionsMap?.[key]?.categoryName || 'General'
+            const categoryName = allQuestionsMap?.[key]?.categoryName || 'Uncategorized'
             allAnswers[key] = {
               value: answersObj[key],
               questionText: allQuestionsMap?.[key]?.questionText || '',
@@ -286,9 +374,11 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
               )}
             </div>
 
-            {/* Assessment Answers Section - Grouped by Category */}
+            {/* Assessment Answers Section - Grouped by Category (assessment-type order, not alphabetical) */}
             {Object.keys(answersByCategory).length > 0 ? (
-              Object.keys(answersByCategory).map((categoryName, categoryIndex) => {
+              (() => {
+                const namesInOrder = [...orderedCategoryNames.filter(n => answersByCategory[n]?.length), ...Object.keys(answersByCategory).filter(k => !orderedCategoryNames.includes(k))]
+                return namesInOrder.map((categoryName, categoryIndex) => {
                 const categoryAnswers = answersByCategory[categoryName]
                 return (
                   <div key={categoryName} className="detail-section" style={{
@@ -339,10 +429,10 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                             // Check if this question has children
                             const hasChildren = Object.values(questionMap).some(child => {
                               if (!child.parentId || child === q) return false
-                              // Match by ID (most reliable)
-                              if (child.parentId === q.id) return true
-                              // Match by questionCode as fallback
-                              if (child.parentId === q.questionCode) return true
+                              const qId = q.id != null ? Number(q.id) : null
+                              const childPid = child.parentId != null ? Number(child.parentId) : null
+                              if (qId != null && childPid === qId) return true
+                              if (child.parentId === q.questionCode || String(child.parentId) === String(q.questionCode)) return true
                               return false
                             })
                             q.hasChildren = hasChildren
@@ -353,10 +443,10 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                               // Find parent by ID first, then by questionCode
                               const parent = Object.values(questionMap).find(p => {
                                 if (!p.questionCode || p === q) return false
-                                // Match by ID (most reliable)
-                                if (p.id === q.parentId) return true
-                                // Match by questionCode as fallback
-                                if (p.questionCode === q.parentId) return true
+                                const pId = p.id != null ? Number(p.id) : null
+                                const qPid = q.parentId != null ? Number(q.parentId) : null
+                                if (pId != null && qPid !== null && pId === qPid) return true
+                                if (p.questionCode === q.parentId || String(p.questionCode) === String(q.parentId)) return true
                                 return false
                               })
                               if (parent) {
@@ -368,9 +458,62 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                             }
                           })
                           
-                          // Sort root questions and children by display_order
+                          // Placeholder parents: form has 4 main questions; parent (e.g. Q4) may have no answer row (only sub-answers 4_child_0, 4_child_1). Nest those under Q4 so we show 4 main questions.
+                          const orphanChildNodes = rootQuestions.filter(q => {
+                            const code = String(q.questionCode ?? q.question_code ?? '')
+                            const m = code.match(/^(\d+)_child_\d+$/)
+                            if (!m) return false
+                            const parentCode = m[1]
+                            const hasParent = questionMap[parentCode] || rootQuestions.some(r => String(r.questionCode ?? r.question_code) === parentCode)
+                            return !hasParent && orderedRootQuestionCodes.includes(parentCode)
+                          })
+                          if (orphanChildNodes.length > 0) {
+                            const byParent = {}
+                            orphanChildNodes.forEach(q => {
+                              const code = String(q.questionCode ?? q.question_code ?? '')
+                              const m = code.match(/^(\d+)_child_\d+$/)
+                              if (m) {
+                                const parentCode = m[1]
+                                if (!byParent[parentCode]) byParent[parentCode] = []
+                                byParent[parentCode].push(q)
+                              }
+                            })
+                            const indicesToRemove = new Set()
+                            orphanChildNodes.forEach(n => {
+                              const i = rootQuestions.indexOf(n)
+                              if (i >= 0) indicesToRemove.add(i)
+                            })
+                            ;Array.from(indicesToRemove).sort((a, b) => b - a).forEach(i => rootQuestions.splice(i, 1))
+                            Object.keys(byParent).forEach(parentCode => {
+                              const children = byParent[parentCode].sort((a, b) =>
+                                formOrderSequence.indexOf(String(a.questionCode ?? a.question_code)) - formOrderSequence.indexOf(String(b.questionCode ?? b.question_code))
+                              )
+                              const placeholder = {
+                                questionCode: parentCode,
+                                questionText: orderedRootCodeToText[parentCode] || syntheticCodeToText[parentCode] || `Question ${parentCode}`,
+                                value: null,
+                                children,
+                                parentId: null,
+                                hasChildren: true,
+                                questionInfo: null,
+                              }
+                              rootQuestions.push(placeholder)
+                            })
+                          }
+                          
+                          // Sort by full form order (root1, root1 children, root2, ...) so sequence matches form
+                          const formOrderIdx = (code) => {
+                            const c = code != null ? String(code) : ''
+                            const i = formOrderSequence.indexOf(c)
+                            if (i >= 0) return i
+                            const rootOnly = orderedRootQuestionCodes.indexOf(c)
+                            return rootOnly >= 0 ? rootOnly * 1000 : 999999
+                          }
                           const sortByDisplayOrder = (questions) => {
                             return questions.sort((a, b) => {
+                              const formA = formOrderIdx(a.questionCode)
+                              const formB = formOrderIdx(b.questionCode)
+                              if (formA !== formB) return formA - formB
                               const orderA = a.display_order !== null && a.display_order !== undefined ? a.display_order : Number.MAX_SAFE_INTEGER
                               const orderB = b.display_order !== null && b.display_order !== undefined ? b.display_order : Number.MAX_SAFE_INTEGER
                               if (orderA !== orderB) return orderA - orderB
@@ -545,33 +688,38 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                                       Parent
                                     </span>
                                   )}
-                                  <span>
-                                    {questionData.questionText && questionData.questionText !== 'N/A' 
-                                      ? questionData.questionText 
-                                      : (questionInfo?.questionText && questionInfo.questionText !== 'N/A'
-                                        ? questionInfo.questionText
-                                        : `Question ${questionData.questionCode}`)}
-                                  </span>
+                                  <SafeDescriptionHtml
+                                    as="span"
+                                    html={
+                                      (questionData.questionText && questionData.questionText !== 'N/A')
+                                        ? questionData.questionText
+                                        : ((questionInfo?.questionText && questionInfo.questionText !== 'N/A')
+                                          ? questionInfo.questionText
+                                          : `Question ${questionData.questionCode}`)
+                                    }
+                                  />
                                 </div>
-                                <div className="answer-value" style={{
-                                  padding: '12px',
-                                  background: '#f8f9fa',
-                                  borderRadius: '8px',
-                                  border: '1px solid #e0e0e0',
-                                  borderLeft: `4px solid ${isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#667eea'}`
-                                }}>
-                                  <span className="answer-label" style={{
-                                    color: isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#666',
-                                    fontWeight: '600',
-                                    marginRight: '8px',
-                                    fontSize: '0.9em'
-                                  }}>Answer:</span>
-                                  <span style={{ color: '#333' }}>
-                                    {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
-                                      ? displayAnswer 
-                                      : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
-                                  </span>
-                                </div>
+                                {(displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A') || !(questionData.children?.length > 0) ? (
+                                  <div className="answer-value" style={{
+                                    padding: '12px',
+                                    background: '#f8f9fa',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e0e0e0',
+                                    borderLeft: `4px solid ${isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#667eea'}`
+                                  }}>
+                                    <span className="answer-label" style={{
+                                      color: isChild ? (level === 1 ? '#667eea' : '#48bb78') : '#666',
+                                      fontWeight: '600',
+                                      marginRight: '8px',
+                                      fontSize: '0.9em'
+                                    }}>Answer:</span>
+                                    <span style={{ color: '#333' }}>
+                                      {displayAnswer && displayAnswer !== 'Not answered' && displayAnswer !== 'N/A'
+                                        ? displayAnswer 
+                                        : <span style={{ color: '#999', fontStyle: 'italic' }}>No answer provided</span>}
+                                    </span>
+                                  </div>
+                                ) : null}
                               </div>
                               {/* Recursively render children inline (similar to submission/results page) */}
                               {questionData.children && questionData.children.length > 0 && (
@@ -589,6 +737,7 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
                   </div>
                 )
               })
+            })()
             ) : Object.keys(allAnswers).length > 0 ? (
               <div className="detail-section" style={{
                 padding: '24px',

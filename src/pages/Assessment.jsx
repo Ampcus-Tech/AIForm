@@ -6,6 +6,7 @@ import SingleQuestionView from '../components/assessment/SingleQuestionView'
 import AssessmentPreview from '../components/assessment/AssessmentPreview'
 import SuccessPage from '../components/assessment/SuccessPage'
 import Dropdown from '../components/common/Dropdown'
+import { SafeDescriptionHtml } from '../components/common/RichTextEditor'
 import '../styles.css'
 
 console.log('📦 Assessment component imported, APIs:', { assessmentAPI, questionsAPI, assessmentTypesAPI })
@@ -212,7 +213,7 @@ function Assessment() {
                   categoryName: category.name,
                   categoryId: category.id,
                   answerKey: String(questionNumber), // Use sequential number as key (1, 2, 3...)
-                  originalQuestionCode: question.questionCode || `q_${question.id}`, // Keep original for reference
+                  originalQuestionCode: question.questionCode || question.question_code || question.code || `q_${question.id}`, // Keep original for reference
                   // Preserve children structure for inline display
                   children: question.children || []
                 })
@@ -277,6 +278,25 @@ function Assessment() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     const actualValue = type === 'checkbox' ? String(checked) : String(value)
+
+    const shouldShowChildrenForAnswer = (question, answerValue) => {
+      if (!question?.children || question.children.length === 0) return false
+      if (question.questionType === 'group') return true
+      if (question.questionType !== 'yes_no') return true
+
+      const v = String(answerValue || '').toLowerCase().trim()
+      const isYes = v === 'yes' || v === '1' || v === 'true'
+      const isNo = v === 'no' || v === '0' || v === 'false'
+
+      const when =
+        question.options?.show_children_when ||
+        question.options?.showChildrenWhen ||
+        'yes'
+
+      if (when === 'any') return isYes || isNo
+      if (when === 'no') return isNo
+      return isYes
+    }
     
     // Update the answer immediately
     setFormData((prev) => {
@@ -289,18 +309,15 @@ function Assessment() {
       // name is now the answerKey (sequential number like "1", "2", etc.)
       const question = allQuestionsList.find(q => q.answerKey === name)
       
-      if (question && question.questionType === 'yes_no' && question.children && question.children.length > 0) {
-        if (actualValue !== 'yes') {
-          // Clear child answers when parent is not "yes"
-          // Find children in allQuestionsList to get their answerKeys
+      if (question && question.children && question.children.length > 0) {
+        const showChildrenNow = shouldShowChildrenForAnswer(question, actualValue)
+        if (!showChildrenNow) {
+          // Clear child answers only when children are hidden for this answer
           question.children.forEach(child => {
-            const childInList = allQuestionsList.find(q => 
-              (q.questionCode === child.questionCode && q.id === child.id) ||
-              (q.id === child.id && q.parentId === question.id)
-            )
-            if (childInList && childInList.answerKey) {
-              newAnswers[childInList.answerKey] = ''
-            }
+            const childInList = allQuestionsList.find(q => (q.id === child.id))
+            if (childInList?.answerKey) newAnswers[childInList.answerKey] = ''
+            const childKey = child.questionCode || child.question_code || child.code || `q_${child.id}`
+            if (childKey) newAnswers[childKey] = ''
           })
         }
       }
@@ -428,13 +445,15 @@ function Assessment() {
       if (category.questions && Array.isArray(category.questions)) {
         category.questions.forEach(question => {
           // Reset all questions (including group questions and children)
-          if (question.questionCode) {
-            initialAnswers[question.questionCode] = ''
+          const questionCode = question.questionCode || question.question_code || question.code
+          if (questionCode) {
+            initialAnswers[questionCode] = ''
           }
           if (question.children && Array.isArray(question.children) && question.children.length > 0) {
             question.children.forEach(child => {
-              if (child.questionCode) {
-                initialAnswers[child.questionCode] = ''
+              const childCode = child.questionCode || child.question_code || child.code
+              if (childCode) {
+                initialAnswers[childCode] = ''
               }
             })
           }
@@ -463,19 +482,35 @@ function Assessment() {
     const answerKey = questionInList?.answerKey || String(questionNumber)
     const value = formData.answers[answerKey]
     
-    // For yes_no questions, check if we should show child questions when answered "yes"
+    // For yes_no: show child block whenever user has answered (Yes or No), then filter which children to show per child's show_when
     // For group type questions, always show their children
     // For other question types (text, scale, etc.), always show children if they exist
     const yesNoValue = String(value || '').toLowerCase().trim()
-    const isYesNoAnsweredYes = question.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+    const isYes = (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+    const isNo = (yesNoValue === 'no' || yesNoValue === '0' || yesNoValue === 'false')
+    const showWhen = question.options?.show_children_when || question.options?.showChildrenWhen || 'yes'
     const isGroupType = question.questionType === 'group'
     const isOtherTypeWithChildren = question.questionType !== 'yes_no' && question.questionType !== 'group' && question.children && question.children.length > 0
+    // Show children container for yes_no when user has answered either Yes or No (individual children filtered below by show_when)
+    const isYesNoAnswered = question.questionType === 'yes_no' && (isYes || isNo)
     
     // Show children if:
-    // 1. It's a yes_no question answered "yes", OR
+    // 1. It's a yes_no question and user answered Yes or No (so we can show Yes-only / No-only / Any children), OR
     // 2. It's a group type question (always show), OR
     // 3. It's any other type with children (always show for text, scale, etc.)
-    const showChildren = (isYesNoAnsweredYes || isGroupType || isOtherTypeWithChildren) && question.children && question.children.length > 0
+    const showChildren = (isYesNoAnswered || isGroupType || isOtherTypeWithChildren) && question.children && question.children.length > 0
+
+    // For yes_no: show only children whose show_when matches current answer (Yes / No / Any)
+    const childrenToRender = question.questionType === 'yes_no' && question.children
+      ? question.children.filter(child => {
+          const raw = child.options?.show_when ?? child.options?.showWhen ?? showWhen
+          const childShowWhen = typeof raw === 'string' ? raw.toLowerCase().trim() : 'any'
+          if (!childShowWhen || childShowWhen === 'any') return true
+          if (childShowWhen === 'yes') return isYes
+          if (childShowWhen === 'no') return isNo
+          return false
+        })
+      : (question.children || [])
     
     // Debug logging for nested children
     if (question.children && question.children.length > 0) {
@@ -491,12 +526,12 @@ function Assessment() {
     return (
       <div key={question.id} className="question-group">
         <label className="question-label">
-          {questionNumber}. {question.questionText}
+          {questionNumber}. <SafeDescriptionHtml as="span" html={question.questionText} />
           {question.isRequired && <span className="required">*</span>}
         </label>
         
         {question.helpText && (
-          <p className="question-help">{question.helpText}</p>
+          <SafeDescriptionHtml html={question.helpText} className="question-help" />
         )}
         
         <QuestionInput
@@ -506,26 +541,27 @@ function Assessment() {
           formData={formData}
         />
         
-        {/* Render child questions if parent is answered "yes" - supports nested children */}
-        {showChildren && (
+        {/* Render child questions - for yes_no only those matching show_when (Yes/No/Any) */}
+        {showChildren && childrenToRender.length > 0 && (
           <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #667eea' }}>
-            {question.children.map((child, childIndex) => {
-              // Find child question in allQuestionsList to get its sequential number
-              // Try multiple matching strategies
+            {childrenToRender.map((child, childIndex) => {
+              // Index in full question.children (by display order) so backend's 3_child_0, 3_child_1 match correctly
+              const childIndexInParent = question.children.findIndex(c =>
+                c.id === child.id || (c.questionCode && c.questionCode === child.questionCode) || (c.question_code === child.question_code)
+              )
+              const stableChildIndex = childIndexInParent >= 0 ? childIndexInParent : childIndex
+
               const childInList = allQuestionsList.find(q => {
-                // Match by ID (most reliable)
                 if (q.id === child.id) return true
-                // Match by questionCode and ID
                 if (q.questionCode === child.questionCode && q.id === child.id) return true
-                // Match by parentId and questionCode
-                if ((q.parentId === question.id || q.parentQuestion?.id === question.id) && 
+                if ((q.parentId === question.id || q.parentQuestion?.id === question.id) &&
                     (q.questionCode === child.questionCode || q.originalQuestionCode === child.questionCode)) return true
                 return false
               })
-              
-              // Use the answerKey from allQuestionsList if found, otherwise generate one
-              const childAnswerKey = childInList?.answerKey || 
-                                    (questionInList?.answerKey ? `${questionInList.answerKey}_child_${childIndex}` : String(questionNumber + childIndex + 1))
+
+              // Use stable index in parent's children so "If No, Why..." submits as 3_child_1 when it's 2nd child (backend matches)
+              const childAnswerKey = childInList?.answerKey ||
+                                    (questionInList?.answerKey ? `${questionInList.answerKey}_child_${stableChildIndex}` : String(questionNumber + stableChildIndex + 1))
               
               // If child wasn't found in allQuestionsList, we still need to render it
               // Use the original questionCode or generate one
@@ -553,11 +589,11 @@ function Assessment() {
               return (
                 <div key={child.id || childQuestionCode} className="question-group">
                   <label className="question-label">
-                    {child.questionText || child.question_text}
+                    <SafeDescriptionHtml as="span" html={child.questionText || child.question_text} />
                     {child.isRequired && <span className="required">*</span>}
                   </label>
                   {child.helpText && (
-                    <p className="question-help">{child.helpText}</p>
+                    <SafeDescriptionHtml html={child.helpText} className="question-help" />
                   )}
                   <QuestionInput
                     question={{ ...child, questionCode: childAnswerKey }}
@@ -570,25 +606,28 @@ function Assessment() {
                   {showSubChildren && (
                     <div className="conditional-questions" style={{ marginTop: '15px', paddingLeft: '20px', borderLeft: '3px solid #48bb78' }}>
                       {child.children.map((subChild, subChildIndex) => {
+                        const subChildIndexInParent = child.children.findIndex(sc =>
+                          sc.id === subChild.id || (sc.questionCode && sc.questionCode === subChild.questionCode)
+                        )
+                        const stableSubIndex = subChildIndexInParent >= 0 ? subChildIndexInParent : subChildIndex
                         const subChildInList = allQuestionsList.find(q => {
                           if (q.id === subChild.id) return true
                           if (q.questionCode === subChild.questionCode && q.id === subChild.id) return true
-                          if ((q.parentId === child.id || q.parentQuestion?.id === child.id) && 
+                          if ((q.parentId === child.id || q.parentQuestion?.id === child.id) &&
                               (q.questionCode === subChild.questionCode || q.originalQuestionCode === subChild.questionCode)) return true
                           return false
                         })
-                        
-                        const subChildAnswerKey = subChildInList?.answerKey || 
-                                                  (childInList?.answerKey ? `${childInList.answerKey}_subchild_${subChildIndex}` : `${childAnswerKey}_subchild_${subChildIndex}`)
+                        const subChildAnswerKey = subChildInList?.answerKey ||
+                                                  (childInList?.answerKey ? `${childInList.answerKey}_subchild_${stableSubIndex}` : `${childAnswerKey}_subchild_${stableSubIndex}`)
                         
                         return (
                           <div key={subChild.id || subChildAnswerKey} className="question-group">
                             <label className="question-label">
-                              {subChild.questionText || subChild.question_text}
+                              <SafeDescriptionHtml as="span" html={subChild.questionText || subChild.question_text} />
                               {subChild.isRequired && <span className="required">*</span>}
                             </label>
                             {subChild.helpText && (
-                              <p className="question-help">{subChild.helpText}</p>
+                              <SafeDescriptionHtml html={subChild.helpText} className="question-help" />
                             )}
                             <QuestionInput
                               question={{ ...subChild, questionCode: subChildAnswerKey }}
@@ -832,9 +871,7 @@ function Assessment() {
                 {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
               </h2>
               {selectedAssessmentType.description && (
-                <p className="subtitle">
-                  {selectedAssessmentType.description}
-                </p>
+                <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
               )}
             </>
           )}
@@ -1057,9 +1094,7 @@ function Assessment() {
                 {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
               </h2>
               {selectedAssessmentType.description && (
-                <p className="subtitle">
-                  {selectedAssessmentType.description}
-                </p>
+                <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
               )}
             </>
           )}
@@ -1161,21 +1196,38 @@ function Assessment() {
 
             {/* Show child questions inline with parent - for all question types that have children */}
             {(() => {
-              // For yes_no questions, show children only when answered "yes"
+              // For yes_no: show child block whenever user has answered (Yes or No), then filter which children to show per child's show_when
               // For other question types (text, scale, etc.), always show children if they exist
               const yesNoValue = String(currentAnswer || '').toLowerCase().trim()
-              const isYesNoAnsweredYes = currentQuestion.questionType === 'yes_no' && (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+              const isYes = (yesNoValue === 'yes' || yesNoValue === '1' || yesNoValue === 'true')
+              const isNo = (yesNoValue === 'no' || yesNoValue === '0' || yesNoValue === 'false')
+              const showWhen = currentQuestion.options?.show_children_when || currentQuestion.options?.showChildrenWhen || 'yes'
               const isGroupType = currentQuestion.questionType === 'group'
               const isOtherTypeWithChildren = currentQuestion.questionType !== 'yes_no' && currentQuestion.questionType !== 'group' && currentQuestion.children && currentQuestion.children.length > 0
+              const isYesNoAnswered = currentQuestion.questionType === 'yes_no' && (isYes || isNo)
               
-              const showChildren = (isYesNoAnsweredYes || isGroupType || isOtherTypeWithChildren) && currentQuestion.children && currentQuestion.children.length > 0
+              const showChildren = (isYesNoAnswered || isGroupType || isOtherTypeWithChildren) && currentQuestion.children && currentQuestion.children.length > 0
               
               if (!showChildren) return null
+
+              // For yes_no: only show children whose show_when matches current answer (Yes / No / Any)
+              const childrenToRender = currentQuestion.questionType === 'yes_no'
+                ? currentQuestion.children.filter(child => {
+                    const raw = child.options?.show_when ?? child.options?.showWhen ?? showWhen
+                    const childShowWhen = typeof raw === 'string' ? raw.toLowerCase().trim() : 'any'
+                    if (!childShowWhen || childShowWhen === 'any') return true
+                    if (childShowWhen === 'yes') return isYes
+                    if (childShowWhen === 'no') return isNo
+                    return false
+                  })
+                : currentQuestion.children
+              
+              if (childrenToRender.length === 0) return null
               
               // Recursive function to render child questions and their sub-children
               const renderChildQuestions = (children, level = 0) => {
                 return children.map((child, childIndex) => {
-                  const childAnswerKey = child.questionCode || `q_${child.id}`
+                  const childAnswerKey = child.questionCode || child.question_code || child.code || `q_${child.id}`
                   const childValue = formData.answers[childAnswerKey] || ''
                   
                   // Check if this child has its own children (sub-children)
@@ -1196,11 +1248,11 @@ function Assessment() {
                       borderRadius: '8px'
                     }}>
                       <label className="question-label" style={{ fontSize: level === 0 ? '1em' : '0.95em' }}>
-                        {child.questionText || child.question_text}
+                        <SafeDescriptionHtml as="span" html={child.questionText || child.question_text} />
                         {child.isRequired && <span className="required">*</span>}
                       </label>
                       {child.helpText && (
-                        <p className="question-help" style={{ fontSize: '0.9em' }}>{child.helpText}</p>
+                        <p className="question-help" style={{ fontSize: '0.9em' }}><SafeDescriptionHtml html={child.helpText} /></p>
                       )}
                       <QuestionInput
                         question={{ ...child, questionCode: childAnswerKey }}
@@ -1222,7 +1274,7 @@ function Assessment() {
               
               return (
                 <div style={{ marginTop: '20px' }}>
-                  {renderChildQuestions(currentQuestion.children, 0)}
+                  {renderChildQuestions(childrenToRender, 0)}
                 </div>
               )
             })()}
@@ -1313,9 +1365,7 @@ function Assessment() {
               {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
             </h2>
             {selectedAssessmentType.description && (
-              <p className="subtitle">
-                {selectedAssessmentType.description}
-              </p>
+              <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
             )}
           </>
         ) : (
@@ -1404,9 +1454,11 @@ function Assessment() {
             <section key={category.id} className="form-section">
               <h2>Section {sectionNumber}: {category.name}</h2>
               {category.description && (
-                <p style={{ marginBottom: '20px', color: '#666', fontStyle: 'italic' }}>
-                  {category.description}
-                </p>
+                <SafeDescriptionHtml
+                  html={category.description}
+                  style={{ marginBottom: '20px', color: '#666' }}
+                  className="category-description"
+                />
               )}
 
               {/* Render main questions (child questions will be shown conditionally in renderQuestion) */}

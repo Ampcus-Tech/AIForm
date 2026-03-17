@@ -8,6 +8,7 @@ import AssessmentModal from '../components/admin/AssessmentModal'
 import AssessmentTypeModal from '../components/admin/AssessmentTypeModal'
 import AssessmentDetailsModal from '../components/admin/AssessmentDetailsModal'
 import UserModal from '../components/admin/UserModal'
+import { SafeDescriptionHtml } from '../components/common/RichTextEditor'
 import { formatDate } from '../utils/formatDate'
 import '../styles.css'
 import '../components/admin/AdminDashboard.css'
@@ -1185,7 +1186,7 @@ function AdminDashboard() {
                                     {type.name}
                                   </div>
                                   <div style={{ fontSize: '0.85em', color: '#666', marginBottom: '10px' }}>
-                                    {type.description || 'No description'}
+                                    {type.description ? <SafeDescriptionHtml html={type.description} /> : 'No description'}
                                   </div>
                                   <div style={{ fontSize: '0.8em', color: '#999' }}>
                                     {type.category_count || 0} categories • {type.question_count || 0} questions
@@ -1276,7 +1277,7 @@ function AdminDashboard() {
                                       {cat.name}
                                     </div>
                                     <div style={{ fontSize: '0.85em', color: '#666', marginBottom: '10px' }}>
-                                      {cat.description || 'No description'}
+                                      {cat.description ? <SafeDescriptionHtml html={cat.description} /> : 'No description'}
                                     </div>
                                     <div style={{ fontSize: '0.8em', color: '#999' }}>
                                       {cat.question_count || 0} questions
@@ -2174,7 +2175,9 @@ function AdminDashboard() {
                             <span className="question-count">({category.questions?.length || 0} questions)</span>
                           </h3>
                           {category.description && (
-                            <p className="category-description">{category.description}</p>
+                            <div className="category-description">
+                              <SafeDescriptionHtml html={category.description} />
+                            </div>
                           )}
                           
                           {category.questions && category.questions.length > 0 ? (
@@ -2188,7 +2191,9 @@ function AdminDashboard() {
                                     </span>
                                     {question.isRequired && <span className="required-badge">Required</span>}
                                   </div>
-                                  <div className="question-text">{question.questionText}</div>
+                                  <div className="question-text">
+                                    <SafeDescriptionHtml html={question.questionText} />
+                                  </div>
                                   
                                   {question.options && (
                                     <div className="question-options">
@@ -2965,7 +2970,8 @@ function AdminDashboard() {
                                   <React.Fragment key={question.questionCode}>
                                     <div className={`question-item ${question.questionType === 'text' ? 'full-width' : ''}`}>
                                       <div className="question-text">
-                                        <strong>{currentQuestionNumber}:</strong> {question.questionText}
+                                        <strong>{currentQuestionNumber}:</strong>{' '}
+                                        <SafeDescriptionHtml as="span" html={question.questionText} />
                                       </div>
                                       <div className="answer-value">
                                         <span className="answer-label">Answer:</span>
@@ -3220,7 +3226,8 @@ function AdminDashboard() {
                                   <React.Fragment key={question.questionCode}>
                                     <div className={`question-item ${question.questionType === 'text' ? 'full-width' : ''}`}>
                                       <div className="question-text">
-                                        <strong>{currentQuestionNumber}:</strong> {question.questionText}
+                                        <strong>{currentQuestionNumber}:</strong>{' '}
+                                        <SafeDescriptionHtml as="span" html={question.questionText} />
                                       </div>
                                       <div className="answer-value">
                                         <span className="answer-label">Answer:</span>

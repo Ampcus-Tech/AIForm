@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { adminAPI } from '../../services/api'
+import RichTextEditor from '../common/RichTextEditor'
 
 function QuestionModal({ question, categories, onClose, onSave }) {
   const [parentQuestions, setParentQuestions] = useState([])
   const [loadingParents, setLoadingParents] = useState(false)
+  const [scaleLabelsText, setScaleLabelsText] = useState('') // raw string for Scale Labels input so typing invalid JSON doesn't reset
   const [formData, setFormData] = useState({
     category_id: question?.category_id || question?.categoryId || (categories && categories.length > 0 ? categories[0].id : ''),
     question_text: question?.question_text || question?.questionText || '',
@@ -159,6 +161,19 @@ function QuestionModal({ question, categories, onClose, onSave }) {
       setParentQuestions([])
     }
   }, [categories, formData.category_id, question?.id])
+
+  // Sync scale labels raw text when editing a question with scale type (so input is editable)
+  useEffect(() => {
+    if (formData.question_type === 'scale' && formData.options?.labels != null) {
+      try {
+        setScaleLabelsText(typeof formData.options.labels === 'string' ? formData.options.labels : JSON.stringify(formData.options.labels))
+      } catch {
+        setScaleLabelsText('')
+      }
+    } else {
+      setScaleLabelsText('')
+    }
+  }, [question?.id, formData.question_type]) // when modal opens for another question or type changes
 
   // Validate and reset category_id if it doesn't exist in categories
   useEffect(() => {
@@ -357,23 +372,11 @@ function QuestionModal({ question, categories, onClose, onSave }) {
               <label style={labelStyle}>
                 Question Text <span style={{ color: '#e74c3c' }}>*</span>
               </label>
-              <textarea
+              <RichTextEditor
                 value={formData.question_text}
-                onChange={(e) => setFormData({ ...formData, question_text: e.target.value })}
-                required
-                rows="3"
-                placeholder="Enter the question text..."
-                style={{
-                  ...inputStyle,
-                  resize: 'vertical',
-                  minHeight: '80px',
-                  whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word',
-                  overflowWrap: 'break-word',
-                  overflow: 'auto'
-                }}
-                onFocus={(e) => Object.assign(e.target.style, focusStyle)}
-                onBlur={(e) => Object.assign(e.target.style, blurStyle)}
+                onChange={(html) => setFormData({ ...formData, question_text: html })}
+                placeholder="Enter the question text... Use H2/H3, bold, lists if needed."
+                minHeight={120}
               />
             </div>
 
@@ -407,6 +410,92 @@ function QuestionModal({ question, categories, onClose, onSave }) {
               </div>
 
             </div>
+
+            {/* Per-child: show this question only when parent answer is Yes / No / Any */}
+            {formData.parent_id && (
+              <div style={{
+                padding: '20px',
+                background: '#f0fff4',
+                borderRadius: '10px',
+                border: '2px solid #9ae6b4',
+                marginBottom: '24px'
+              }}>
+                <h4 style={{ margin: '0 0 16px 0', color: '#276749', fontSize: '1.1em' }}>👶 Child Question Display</h4>
+                <div className="form-group">
+                  <label style={labelStyle}>Show this question when parent answer is</label>
+                  <select
+                    value={formData.options?.show_when || 'yes'}
+                    onChange={(e) => updateOptions('show_when', e.target.value)}
+                    style={{
+                      ...inputStyle,
+                      cursor: 'pointer',
+                      appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23276749' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 16px center'
+                    }}
+                    onFocus={(e) => Object.assign(e.target.style, focusStyle)}
+                    onBlur={(e) => Object.assign(e.target.style, blurStyle)}
+                  >
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                    <option value="any">Yes or No (always)</option>
+                  </select>
+                  <small style={{
+                    color: '#666',
+                    fontSize: '0.85em',
+                    marginTop: '6px',
+                    display: 'block'
+                  }}>
+                    Choose when this follow-up question appears: only when the user selects Yes, only when No, or always.
+                  </small>
+                </div>
+              </div>
+            )}
+
+            {formData.question_type === 'yes_no' && (
+              <div style={{
+                padding: '20px',
+                background: '#f8f9ff',
+                borderRadius: '10px',
+                border: '2px solid #e0e7ff',
+                marginBottom: '24px'
+              }}>
+                <h4 style={{ margin: '0 0 16px 0', color: '#667eea', fontSize: '1.1em' }}>✅ Yes/No — different questions for Yes and No</h4>
+                <p style={{ margin: '0 0 16px 0', color: '#555', fontSize: '0.95em', lineHeight: 1.5 }}>
+                  Add <strong>child questions</strong> to this Yes/No. For each child, set &quot;Show when parent answer is: Yes&quot; or &quot;No&quot; so <strong>one question shows when user selects Yes</strong> and a <strong>different question when they select No</strong>.
+                </p>
+                <div className="form-group">
+                  <label style={labelStyle}>Default for child questions (if a child does not set its own)</label>
+                  <select
+                    value={formData.options?.show_children_when || 'yes'}
+                    onChange={(e) => updateOptions('show_children_when', e.target.value)}
+                    style={{
+                      ...inputStyle,
+                      cursor: 'pointer',
+                      appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23667eea' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 16px center'
+                    }}
+                    onFocus={(e) => Object.assign(e.target.style, focusStyle)}
+                    onBlur={(e) => Object.assign(e.target.style, blurStyle)}
+                  >
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                    <option value="any">Yes or No</option>
+                  </select>
+                  <small style={{
+                    color: '#666',
+                    fontSize: '0.85em',
+                    marginTop: '6px',
+                    display: 'block'
+                  }}>
+                    💡 Use “No” To show two different questions: add two child questions, then edit each and set one to show when parent answer is Yes and the other when No.
+                  </small>
+                </div>
+              </div>
+            )}
 
             {formData.question_type === 'scale' && (
               <div style={{ 
@@ -447,13 +536,15 @@ function QuestionModal({ question, categories, onClose, onSave }) {
                   <label style={labelStyle}>Scale Labels (Optional)</label>
                   <input
                     type="text"
-                    value={formData.options?.labels ? JSON.stringify(formData.options.labels) : ''}
+                    value={formData.question_type === 'scale' ? scaleLabelsText : ''}
                     onChange={(e) => {
+                      const raw = e.target.value
+                      setScaleLabelsText(raw)
                       try {
-                        const labels = e.target.value ? JSON.parse(e.target.value) : {}
+                        const labels = raw.trim() ? JSON.parse(raw) : {}
                         updateOptions('labels', labels)
-                      } catch (err) {
-                        // Invalid JSON, ignore
+                      } catch {
+                        // Invalid JSON while typing – keep raw text so user can continue editing
                       }
                     }}
                     placeholder='{"1": "Low", "5": "High"}'
@@ -523,6 +614,15 @@ function QuestionModal({ question, categories, onClose, onSave }) {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h4 style={{ margin: 0, color: '#667eea', fontSize: '1.1em' }}>📋 Multiple Choice Options</h4>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#333', fontWeight: '600', fontSize: '0.9em' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!formData.options?.allowMultiple}
+                      onChange={(e) => updateOptions('allowMultiple', e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    Allow multiple selection
+                  </label>
                   <button
                     type="button"
                     onClick={() => {
@@ -695,23 +795,12 @@ function QuestionModal({ question, categories, onClose, onSave }) {
 
               <div className="form-group">
                 <label style={labelStyle}>Help Text</label>
-                <textarea
+                <RichTextEditor
                   value={formData.help_text}
-                  onChange={(e) => setFormData({ ...formData, help_text: e.target.value })}
-                  rows="2"
+                  onChange={(html) => setFormData({ ...formData, help_text: html })}
                   placeholder="Help text or instructions for this question"
-                  style={{
-                    ...inputStyle,
-                    resize: 'vertical',
-                    minHeight: '60px',
-                    whiteSpace: 'pre-wrap',
-                    wordWrap: 'break-word',
-                    overflowWrap: 'break-word',
-                    overflow: 'auto'
-                  }}
-                  onFocus={(e) => Object.assign(e.target.style, focusStyle)}
-                  onBlur={(e) => Object.assign(e.target.style, blurStyle)}
-                />
+                  minHeight={90}
+              />
               </div>
             </div>
 

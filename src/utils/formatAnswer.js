@@ -13,7 +13,15 @@ export const formatAnswer = (answer, questionCode, questionType, question = null
   
   // For scale questions, try to get the label
   if (questionType === 'scale' && question && question.options) {
-    const labels = question.options.labels || {}
+    let labels = question.options.labels || {}
+    // labels may be persisted as JSON string; parse if needed
+    if (typeof labels === 'string') {
+      try {
+        labels = JSON.parse(labels)
+      } catch {
+        labels = {}
+      }
+    }
     const answerStr = String(answer)
     const answerNum = parseInt(answer)
     

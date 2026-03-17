@@ -4,7 +4,11 @@ import React from 'react'
  * Renders question input based on question type
  */
 function QuestionInput({ question, value, onChange, formData }) {
-  const questionCode = question.questionCode || `q_${question.id}`
+  const questionCode =
+    question.questionCode ||
+    question.question_code ||
+    question.code ||
+    `q_${question.id}`
   const currentValue = formData?.answers?.[questionCode] !== undefined 
     ? String(formData.answers[questionCode]) 
     : String(value || '')
@@ -93,6 +97,55 @@ function QuestionInput({ question, value, onChange, formData }) {
 
     case 'multiple_choice':
       const options = question.options?.options || []
+      // Support multi-select via checkboxes when enabled in options
+      if (question.options?.allowMultiple) {
+        let selected = []
+        try {
+          const parsed = JSON.parse(currentValue)
+          if (Array.isArray(parsed)) selected = parsed.map(String)
+        } catch (e) {
+          selected = currentValue ? [String(currentValue)] : []
+        }
+
+        const toggle = (option, checked) => {
+          const next = checked
+            ? Array.from(new Set([...selected, option]))
+            : selected.filter(v => v !== option)
+
+          onChange({
+            target: {
+              name: questionCode,
+              value: JSON.stringify(next),
+              type: 'text',
+            }
+          })
+        }
+
+        return (
+          <div className="radio-options">
+            {options.map((option, index) => (
+              <label key={index} style={{ cursor: 'pointer', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  name={`${questionCode}__${index}`}
+                  value={option}
+                  checked={selected.includes(option)}
+                  onChange={(e) => toggle(option, e.target.checked)}
+                />{' '}
+                {option}
+              </label>
+            ))}
+          </div>
+        )
+      }
+
+      const otherOption = options.find(o => String(o).trim().toLowerCase() === 'other')
+      const isOtherSelected = otherOption && currentValue === otherOption
+      const otherTextKey = `${questionCode}_other`
+      const otherTextValue = formData?.answers?.[otherTextKey] !== undefined
+        ? String(formData.answers[otherTextKey])
+        : ''
+
       return (
         <div className="radio-options">
           {options.map((option, index) => (
@@ -108,11 +161,38 @@ function QuestionInput({ question, value, onChange, formData }) {
               {option}
             </label>
           ))}
+          {isOtherSelected && (
+            <div className="other-text-wrap" style={{ marginTop: 10 }}>
+              <input
+                type="text"
+                name={otherTextKey}
+                value={otherTextValue}
+                onChange={onChange}
+                placeholder="Please specify..."
+                className="other-text-input"
+                style={{
+                  width: '100%',
+                  maxWidth: 400,
+                  padding: '8px 12px',
+                  marginTop: 6,
+                  border: '1px solid #ccc',
+                  borderRadius: 6,
+                  fontSize: '1em',
+                }}
+              />
+            </div>
+          )}
         </div>
       )
 
     case 'percentage_range':
       const percentageOptions = question.options?.options || []
+      const pctOtherOption = percentageOptions.find(o => String(o).trim().toLowerCase() === 'other')
+      const pctOtherSelected = pctOtherOption && currentValue === pctOtherOption
+      const pctOtherTextKey = `${questionCode}_other`
+      const pctOtherTextValue = formData?.answers?.[pctOtherTextKey] !== undefined
+        ? String(formData.answers[pctOtherTextKey])
+        : ''
       return (
         <div className="radio-options">
           {percentageOptions.map((option, index) => (
@@ -128,6 +208,27 @@ function QuestionInput({ question, value, onChange, formData }) {
               {option}
             </label>
           ))}
+          {pctOtherSelected && (
+            <div className="other-text-wrap" style={{ marginTop: 10 }}>
+              <input
+                type="text"
+                name={pctOtherTextKey}
+                value={pctOtherTextValue}
+                onChange={onChange}
+                placeholder="Please specify..."
+                className="other-text-input"
+                style={{
+                  width: '100%',
+                  maxWidth: 400,
+                  padding: '8px 12px',
+                  marginTop: 6,
+                  border: '1px solid #ccc',
+                  borderRadius: 6,
+                  fontSize: '1em',
+                }}
+              />
+            </div>
+          )}
         </div>
       )
 
@@ -139,7 +240,7 @@ function QuestionInput({ question, value, onChange, formData }) {
           value={currentValue}
           onChange={onChange}
           required={isRequired}
-          placeholder={question.placeholder || 'Please enter your answer...'}
+          placeholder={question.placeholder || ''}
           minLength={question.validationRules?.minLength || 0}
         />
       )
@@ -155,7 +256,7 @@ function QuestionInput({ question, value, onChange, formData }) {
           value={currentValue}
           onChange={onChange}
           required={isRequired}
-          placeholder={question.placeholder || 'Please enter your answer...'}
+          placeholder={question.placeholder || ''}
         />
       )
   }

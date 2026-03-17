@@ -7,6 +7,7 @@ import UserModal from './admin/UserModal'
 import CategoryModal from './admin/CategoryModal'
 import QuestionModal from './admin/QuestionModal'
 import AssessmentDetailsModal from './admin/AssessmentDetailsModal'
+import { SafeDescriptionHtml } from './common/RichTextEditor'
 import '../styles.css'
 import './AdminDashboard.css'
 
@@ -2035,17 +2036,18 @@ function AdminDashboard() {
                                     {cat.name}
                                   </strong>
                                   {cat.description && (
-                                    <span style={{ 
-                                      fontSize: '0.85em', 
-                                      color: '#666', 
-                                      display: 'block',
-                                      maxWidth: '300px',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap'
-                                    }}>
-                                      {cat.description}
-                                    </span>
+                                    <SafeDescriptionHtml
+                                      html={cat.description}
+                                      style={{
+                                        fontSize: '0.85em',
+                                        color: '#666',
+                                        maxWidth: '300px',
+                                        overflow: 'hidden',
+                                        display: '-webkit-box',
+                                        WebkitBoxOrient: 'vertical',
+                                        WebkitLineClamp: 2,
+                                      }}
+                                    />
                                   )}
                                 </div>
                               </td>
@@ -2329,7 +2331,6 @@ function AdminDashboard() {
                     {/* Search Input */}
                     <div style={{ position: 'relative', width: '100%' }}>
                       <label style={{
-                        display: 'block',
                         marginBottom: '10px',
                         fontWeight: '600',
                         color: '#333',
@@ -2436,7 +2437,6 @@ function AdminDashboard() {
                     {/* Assessment Type Filter */}
                     <div style={{ width: '100%' }}>
                       <label style={{
-                        display: 'block',
                         marginBottom: '10px',
                         fontWeight: '600',
                         color: '#333',
@@ -2492,7 +2492,6 @@ function AdminDashboard() {
                     {/* Category Filter */}
                     <div style={{ width: '100%' }}>
                       <label style={{
-                        display: 'block',
                         marginBottom: '10px',
                         fontWeight: '600',
                         color: '#333',
@@ -2548,7 +2547,6 @@ function AdminDashboard() {
                     {/* Question Type Filter */}
                     <div style={{ width: '100%' }}>
                       <label style={{
-                        display: 'block',
                         marginBottom: '10px',
                         fontWeight: '600',
                         color: '#333',
@@ -2859,7 +2857,9 @@ function AdminDashboard() {
                                         fontWeight: '500',
                                         display: 'block'
                                       }}>
-                                        {q.questionText || q.question_text || 'N/A'}
+                                        <SafeDescriptionHtml
+                                          html={q.questionText || q.question_text || 'N/A'}
+                                        />
                                       </div>
                                     </td>
                                 <td style={{ 
@@ -2873,7 +2873,9 @@ function AdminDashboard() {
                                     fontStyle: 'italic',
                                     display: 'block'
                                   }}>
-                                    {q.helpText || q.help_text || (
+                                    {q.helpText || q.help_text ? (
+                                      <SafeDescriptionHtml html={q.helpText || q.help_text} />
+                                    ) : (
                                       <span style={{ color: '#999' }}>No helper text</span>
                                     )}
                                   </div>
@@ -3180,17 +3182,18 @@ function AdminDashboard() {
                                     {type.name}
                                   </strong>
                                   {type.description && (
-                                    <span style={{ 
-                                      fontSize: '0.85em', 
-                                      color: '#666', 
-                                      display: 'block',
-                                      maxWidth: '300px',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap'
-                                    }}>
-                                      {type.description}
-                                    </span>
+                                    <SafeDescriptionHtml
+                                      html={type.description}
+                                      style={{
+                                        fontSize: '0.85em',
+                                        color: '#666',
+                                        maxWidth: '300px',
+                                        overflow: 'hidden',
+                                        display: '-webkit-box',
+                                        WebkitBoxOrient: 'vertical',
+                                        WebkitLineClamp: 2,
+                                      }}
+                                    />
                                   )}
                                 </div>
                               </td>
@@ -3455,9 +3458,13 @@ function AdminDashboard() {
                     </div>
                       <div className="info-item full-width">
                       <strong>Description:</strong>
-                      <p style={{ marginTop: '5px', color: '#666' }}>
-                        {viewingAssessmentType.description || 'N/A'}
-                      </p>
+                      <div style={{ marginTop: '5px', color: '#666' }}>
+                        {viewingAssessmentType.description ? (
+                          <SafeDescriptionHtml html={viewingAssessmentType.description} />
+                        ) : (
+                          'N/A'
+                        )}
+                      </div>
                       </div>
                   </div>
                 </div>
@@ -3767,9 +3774,13 @@ function AdminDashboard() {
                     </div>
                     <div className="info-item full-width">
                       <strong>Description:</strong>
-                      <p style={{ marginTop: '5px', color: '#666' }}>
-                        {viewingCategory.description || 'N/A'}
-                      </p>
+                      <div style={{ marginTop: '5px', color: '#666' }}>
+                        {viewingCategory.description ? (
+                          <SafeDescriptionHtml html={viewingCategory.description} />
+                        ) : (
+                          'N/A'
+                        )}
+                      </div>
                     </div>
                     <div className="info-item">
                       <strong>Display Order:</strong> {viewingCategory.display_order || viewingCategory.displayOrder || 0}
@@ -3900,9 +3911,10 @@ function AdminDashboard() {
                   <div className="info-grid">
                     <div className="info-item full-width">
                       <strong>Question Text:</strong>
-                      <p style={{ marginTop: '5px', color: '#333', fontSize: '1.05em' }}>
-                        {viewingQuestion.questionText || viewingQuestion.question_text || 'N/A'}
-                      </p>
+                      <SafeDescriptionHtml
+                        html={viewingQuestion.questionText || viewingQuestion.question_text || 'N/A'}
+                        style={{ marginTop: '5px', color: '#333', fontSize: '1.05em' }}
+                      />
                 </div>
                     <div className="info-item">
                       <strong>Question Code:</strong> {viewingQuestion.questionCode || viewingQuestion.question_code || 'N/A'}

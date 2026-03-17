@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import RichTextEditor from '../common/RichTextEditor'
 
 function AssessmentTypeModal({ assessmentType, onClose, onSave }) {
   const existingSettings = assessmentType?.settings || {}
@@ -62,17 +63,11 @@ function AssessmentTypeModal({ assessmentType, onClose, onSave }) {
             </div>
             <div className="form-group">
               <label>Description</label>
-              <textarea
+              <RichTextEditor
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows="3"
-                placeholder="Describe this assessment type..."
-                style={{
-                  whiteSpace: 'pre-wrap',
-                  wordWrap: 'break-word',
-                  overflowWrap: 'break-word',
-                  overflow: 'auto'
-                }}
+                onChange={(html) => setFormData({ ...formData, description: html })}
+                placeholder="Describe this assessment type... Use the toolbar for headings, bold, lists (e.g. Program Expectations)."
+                minHeight={140}
               />
             </div>
             <div className="form-row">
