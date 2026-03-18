@@ -3,11 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { assessmentAPI, assessmentTypesAPI } from '../services/api'
 import { formatAnswer } from '../utils/formatAnswer'
 import { SafeDescriptionHtml } from '../components/common/RichTextEditor'
+import { useBranding } from '../contexts/BrandingContext'
+import BrandLogo from '../components/common/BrandLogo'
 import '../styles.css'
 
 function AssessmentResults() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { config: branding } = useBranding()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [assessment, setAssessment] = useState(null)
@@ -70,7 +73,7 @@ function AssessmentResults() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+        background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)'
       }}>
         <div style={{
           background: 'white',
@@ -83,7 +86,7 @@ function AssessmentResults() {
             width: '50px',
             height: '50px',
             border: '4px solid #f3f3f3',
-            borderTop: '4px solid #667eea',
+            borderTop: '4px solid var(--brand-primary)',
             borderRadius: '50%',
             animation: 'spin 1s linear infinite',
             margin: '0 auto 20px'
@@ -107,7 +110,7 @@ function AssessmentResults() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
         padding: '20px'
       }}>
         <div style={{
@@ -133,7 +136,7 @@ function AssessmentResults() {
                 fontSize: '1em',
                 fontWeight: '600',
                 color: 'white',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
                 border: 'none',
                 borderRadius: '10px',
                 cursor: 'pointer'
@@ -147,9 +150,9 @@ function AssessmentResults() {
                 padding: '12px 24px',
                 fontSize: '1em',
                 fontWeight: '600',
-                color: '#667eea',
+                color: 'var(--brand-primary)',
                 background: 'white',
-                border: '2px solid #667eea',
+                border: '2px solid var(--brand-primary)',
                 borderRadius: '10px',
                 cursor: 'pointer'
               }}
@@ -326,6 +329,21 @@ function AssessmentResults() {
           borderBottom: '2px solid #e0e0e0'
         }}>
           <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <BrandLogo
+                logoUrl={branding?.logoUrl}
+                appName={branding?.appName}
+                width={branding?.logoWidth ?? 56}
+                height={branding?.logoHeight ?? 56}
+                rounded={12}
+                padding={6}
+                background="rgba(0,0,0,0.04)"
+                foreground="#111827"
+              />
+              <div style={{ fontWeight: '700', letterSpacing: '1px', color: '#333' }}>
+                {branding?.appName || 'SBEAMP'}
+              </div>
+            </div>
             <h1 style={{
               fontSize: '2.5em',
               margin: '0 0 10px 0',
@@ -379,74 +397,12 @@ function AssessmentResults() {
             borderRadius: '10px',
             border: '1px solid #e0e7ff'
           }}>
-            <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Contact Name</div>
-            <div style={{ fontSize: '1.2em', fontWeight: '600', color: '#333' }}>
-              {assessment.contact_name || assessment.user_name || 'Anonymous'}
-            </div>
-          </div>
-          <div style={{
-            padding: '20px',
-            background: '#f8f9ff',
-            borderRadius: '10px',
-            border: '1px solid #e0e7ff'
-          }}>
-            <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Email</div>
-            <div style={{ fontSize: '1.2em', fontWeight: '600', color: '#333' }}>
-              {assessment.contact_email || assessment.user_email || 'N/A'}
-            </div>
-          </div>
-          <div style={{
-            padding: '20px',
-            background: '#f8f9ff',
-            borderRadius: '10px',
-            border: '1px solid #e0e7ff'
-          }}>
-            <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Company</div>
-            <div style={{ fontSize: '1.2em', fontWeight: '600', color: '#333' }}>
-              {assessment.company_name || 'N/A'}
-            </div>
-          </div>
-          <div style={{
-            padding: '20px',
-            background: '#f8f9ff',
-            borderRadius: '10px',
-            border: '1px solid #e0e7ff'
-          }}>
             <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Submitted At</div>
             <div style={{ fontSize: '1.2em', fontWeight: '600', color: '#333' }}>
               {formatDate(assessment.submitted_at || assessment.created_at)}
             </div>
           </div>
         </div>
-
-        {/* Summary Section */}
-        {summary && summary.overallScore !== undefined && (
-          <div style={{
-            padding: '30px',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: '15px',
-            color: 'white',
-            marginBottom: '40px',
-            textAlign: 'center'
-          }}>
-            <h2 style={{ margin: '0 0 20px 0', fontSize: '1.8em' }}>Overall Score</h2>
-            <div style={{
-              fontSize: '4em',
-              fontWeight: '700',
-              marginBottom: '10px'
-            }}>
-              {summary.overallScore || 0}%
-            </div>
-            {summary.readinessLevel && (
-              <div style={{
-                fontSize: '1.3em',
-                opacity: 0.9
-              }}>
-                {summary.readinessLevel}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Answers by Category */}
         <div>

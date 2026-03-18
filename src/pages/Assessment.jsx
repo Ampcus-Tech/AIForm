@@ -7,6 +7,8 @@ import AssessmentPreview from '../components/assessment/AssessmentPreview'
 import SuccessPage from '../components/assessment/SuccessPage'
 import Dropdown from '../components/common/Dropdown'
 import { SafeDescriptionHtml } from '../components/common/RichTextEditor'
+import { useBranding } from '../contexts/BrandingContext'
+import BrandLogo from '../components/common/BrandLogo'
 import '../styles.css'
 
 console.log('📦 Assessment component imported, APIs:', { assessmentAPI, questionsAPI, assessmentTypesAPI })
@@ -19,6 +21,7 @@ function Assessment() {
   console.log('🎬 Component location: pages/Assessment.jsx')
   console.log('🎬 This is the DYNAMIC VERSION with API calls')
   console.log('🎬 ==========================================')
+  const { config: branding } = useBranding()
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -27,16 +30,11 @@ function Assessment() {
   const [selectedAssessmentType, setSelectedAssessmentType] = useState(null)
   const [formData, setFormData] = useState({
     answers: {},
-    contact_name: '',
-    contact_email: '',
-    company_name: '',
-    contact_title: '',
     assessment_type_id: null,
   })
   // Single question mode states
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [showPreview, setShowPreview] = useState(false)
-  const [showContactInfo, setShowContactInfo] = useState(false) // New state for contact info step
   const [allQuestionsList, setAllQuestionsList] = useState([]) // Flattened list of all questions
   const [submissionSuccess, setSubmissionSuccess] = useState(false) // Track successful submission
   const [submittedAssessmentId, setSubmittedAssessmentId] = useState(null) // Store submitted assessment ID
@@ -228,7 +226,6 @@ function Assessment() {
         // Reset single question mode state when questions are loaded
         setCurrentQuestionIndex(0)
         setShowPreview(false)
-        setShowContactInfo(false)
         
         // Initialize form data with empty answers for all questions
         // Use sequential numbers (1, 2, 3...) as keys
@@ -349,12 +346,7 @@ function Assessment() {
       console.log('Total answers in formData:', Object.keys(formData.answers).length)
       console.log('Filtered answers (non-empty):', Object.keys(filteredAnswers).length)
       console.log('Filtered answers object:', filteredAnswers)
-      console.log('Contact info:', {
-        contact_name: formData.contact_name,
-        contact_email: formData.contact_email,
-        company_name: formData.company_name,
-        contact_title: formData.contact_title,
-      })
+      console.log('Contact info: (removed)')
       
       // Map sequential number keys (1, 2, 3...) back to question codes for backend
       // Create a mapping from sequential numbers to question codes
@@ -375,10 +367,6 @@ function Assessment() {
       // Prepare submission data in dynamic format
       const submissionData = {
         answers: mappedAnswers, // Use question codes for backend
-        contact_name: formData.contact_name,
-        contact_email: formData.contact_email,
-        company_name: formData.company_name,
-        contact_title: formData.contact_title,
         assessment_type_id: formData.assessment_type_id || selectedAssessmentType?.id || null,
       }
       
@@ -400,7 +388,7 @@ function Assessment() {
             id: assessmentId,
             submittedAt: response.assessment.submittedAt,
             assessmentType: selectedAssessmentType?.name,
-            contactEmail: formData.contact_email
+            contactEmail: null
           }))
         }
         
@@ -409,7 +397,6 @@ function Assessment() {
         
         // Reset all state - clear preview, contact info, and form data
         setShowPreview(false)
-        setShowContactInfo(false)
         setCurrentQuestionIndex(0)
         
         // Reset form data using allQuestionsList (which uses sequential numbers)
@@ -422,10 +409,6 @@ function Assessment() {
         
         setFormData({
           answers: initialAnswers,
-          contact_name: '',
-          contact_email: '',
-          company_name: '',
-          contact_title: '',
           assessment_type_id: formData.assessment_type_id, // Keep the assessment type
         })
       } else {
@@ -462,10 +445,7 @@ function Assessment() {
     })
     setFormData({
       answers: initialAnswers,
-      contact_name: '',
-      contact_email: '',
-      company_name: '',
-      contact_title: '',
+      assessment_type_id: formData.assessment_type_id || selectedAssessmentType?.id || null,
     })
   }
 
@@ -699,7 +679,7 @@ function Assessment() {
 
   // Check if single question mode is enabled
   const isSingleQuestionMode = selectedAssessmentType?.settings?.singleQuestionMode || false
-  
+
   // Calculate question numbers across all categories
   let questionNumber = 1
 
@@ -710,35 +690,17 @@ function Assessment() {
       // Scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } else {
-      // Last question - go to contact information step
-      setShowContactInfo(true)
+      setShowPreview(true)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
 
   // Handle going back in single question mode
   const handlePrevious = () => {
-    if (showContactInfo) {
-      // Go back from contact info to last question
-      setShowContactInfo(false)
-      setCurrentQuestionIndex(allQuestionsList.length - 1)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } else if (currentQuestionIndex > 0) {
+    if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
-  }
-
-  // Handle going to preview from contact info
-  const handleContactInfoNext = () => {
-    // Validate required contact fields
-    if (!formData.contact_name || !formData.contact_email || !formData.company_name) {
-      alert('Please fill in all required contact information fields.')
-      return
-    }
-    setShowContactInfo(false)
-    setShowPreview(true)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // Handle final submission from preview
@@ -758,7 +720,6 @@ function Assessment() {
           setSubmissionSuccess(false)
           setSubmittedAssessmentId(null)
           setShowPreview(false)
-          setShowContactInfo(false)
           setCurrentQuestionIndex(0)
           
           // Reset form data
@@ -771,10 +732,6 @@ function Assessment() {
           
           setFormData({
             answers: initialAnswers,
-            contact_name: '',
-            contact_email: '',
-            company_name: '',
-            contact_title: '',
             assessment_type_id: formData.assessment_type_id,
           })
           
@@ -794,13 +751,13 @@ function Assessment() {
         selectedAssessmentType={selectedAssessmentType}
         onEditQuestion={(index) => {
           setShowPreview(false)
-          setShowContactInfo(false)
           setCurrentQuestionIndex(index)
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
         onBackToLast={() => {
           setShowPreview(false)
-          setShowContactInfo(true)
+          setCurrentQuestionIndex(Math.max(0, allQuestionsList.length - 1))
+          window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
         onSubmit={handleFinalSubmit}
         submitting={submitting}
@@ -808,369 +765,102 @@ function Assessment() {
     )
   }
 
-  // Render contact information step
-  if (showContactInfo && isSingleQuestionMode) {
-    return (
-      <div className="container">
-        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <Link
-            to="/check-results"
-            style={{
-              padding: '8px 20px',
-              background: '#48bb78',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontWeight: '600',
-              display: 'inline-block',
-              fontSize: '0.9em',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = '#38a169'
-              e.target.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = '#48bb78'
-              e.target.style.transform = 'translateY(0)'
-            }}
-          >
-            🔍 Check Results
-          </Link>
-          <Link
-            to="/login"
-            style={{
-              padding: '8px 20px',
-              background: '#667eea',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontWeight: '600',
-              display: 'inline-block',
-              fontSize: '0.9em',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = '#5568d3'
-              e.target.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = '#667eea'
-              e.target.style.transform = 'translateY(0)'
-            }}
-          >
-            🔐 Admin Login
-          </Link>
-        </div>
-        
-        <header>
-          <h1>SBEAMP</h1>
-          {selectedAssessmentType && (
-            <>
-              <h2 style={{ fontSize: '1.5em', marginTop: '10px', fontWeight: '500' }}>
-                {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
-              </h2>
-              {selectedAssessmentType.description && (
-                <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
-              )}
-            </>
-          )}
-          
-          {/* Only show dropdown if there are multiple active assessment types */}
-          {assessmentTypes.length > 1 && (
-            <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
-                Select Assessment Type:
-              </label>
-              <Dropdown
-                value={selectedAssessmentType?.id || ''}
-                onChange={(typeId) => {
-                  const type = assessmentTypes.find(t => t.id === typeId)
-                  if (type) {
-                    console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
-                    // Clear previous questions and state
-                    setCategories([])
-                    setAllQuestionsList([])
-                    setCurrentQuestionIndex(0)
-                    setShowPreview(false)
-                    setShowContactInfo(false)
-                    // Clear previous answers
-                    setFormData(prev => ({
-                      ...prev,
-                      assessment_type_id: type.id,
-                      answers: {} // Clear previous answers when switching types
-                    }))
-                    // Set new assessment type
-                    setSelectedAssessmentType(type)
-                    // Load questions for the selected type only
-                    loadQuestions(type.id)
-                  }
-                }}
-                options={assessmentTypes.map(type => ({
-                  value: type.id,
-                  label: type.name,
-                  icon: type.icon || '📝'
-                }))}
-                placeholder="Select Assessment Type..."
-              />
-            </div>
-          )}
-          
-          <div style={{ 
-            marginTop: '20px', 
-            padding: '15px', 
-            background: 'rgba(255, 255, 255, 0.2)', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <p style={{ color: 'white', fontSize: '1.1em', fontWeight: '600' }}>
-              Contact Information
-            </p>
-            <div style={{ 
-              width: '100%', 
-              height: '8px', 
-              background: 'rgba(255, 255, 255, 0.3)', 
-              borderRadius: '4px',
-              marginTop: '10px',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                width: '100%',
-                height: '100%',
-                background: 'white',
-                transition: 'width 0.3s ease'
-              }} />
-            </div>
-          </div>
-        </header>
-
-        <form id="assessmentForm">
-          <section className="form-section">
-            <h2 style={{ fontSize: '1.5em', marginBottom: '20px', color: '#667eea' }}>
-              Contact Information
-            </h2>
-            <p style={{ marginBottom: '25px', color: '#666', fontSize: '1em' }}>
-              Please provide your contact details to complete the assessment.
-            </p>
-            
-            <div className="question-group">
-              <label className="question-label">
-                Your Name <span className="required">*</span>
-              </label>
-              <input
-                type="text"
-                name="contact_name"
-                value={formData.contact_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, contact_name: e.target.value }))}
-                required
-                style={{ width: '100%', padding: '12px', fontSize: '1em', borderRadius: '6px', border: '1px solid #ddd' }}
-              />
-            </div>
-            <div className="question-group">
-              <label className="question-label">
-                Your Email <span className="required">*</span>
-              </label>
-              <input
-                type="email"
-                name="contact_email"
-                value={formData.contact_email}
-                onChange={(e) => setFormData(prev => ({ ...prev, contact_email: e.target.value }))}
-                required
-                style={{ width: '100%', padding: '12px', fontSize: '1em', borderRadius: '6px', border: '1px solid #ddd' }}
-              />
-            </div>
-            <div className="question-group">
-              <label className="question-label">
-                Company Name <span className="required">*</span>
-              </label>
-              <input
-                type="text"
-                name="company_name"
-                value={formData.company_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, company_name: e.target.value }))}
-                required
-                style={{ width: '100%', padding: '12px', fontSize: '1em', borderRadius: '6px', border: '1px solid #ddd' }}
-              />
-            </div>
-            <div className="question-group">
-              <label className="question-label">Your Title/Role</label>
-              <input
-                type="text"
-                name="contact_title"
-                value={formData.contact_title}
-                onChange={(e) => setFormData(prev => ({ ...prev, contact_title: e.target.value }))}
-                style={{ width: '100%', padding: '12px', fontSize: '1em', borderRadius: '6px', border: '1px solid #ddd' }}
-              />
-            </div>
-
-            <div className="form-actions" style={{ marginTop: '30px', justifyContent: 'space-between' }}>
-              <button
-                type="button"
-                onClick={handlePrevious}
-                className="reset-btn"
-              >
-                ← Previous
-              </button>
-              <button
-                type="button"
-                onClick={handleContactInfoNext}
-                className="submit-btn"
-                disabled={!formData.contact_name || !formData.contact_email || !formData.company_name}
-              >
-                📋 Review & Submit →
-              </button>
-            </div>
-          </section>
-        </form>
-      </div>
-    )
-  }
-
   // Render single question mode
-  if (isSingleQuestionMode && allQuestionsList.length > 0 && !showPreview && !showContactInfo) {
+  if (isSingleQuestionMode && allQuestionsList.length > 0 && !showPreview) {
     const currentQuestion = allQuestionsList[currentQuestionIndex]
     const answerKey = currentQuestion.answerKey
     const currentAnswer = formData.answers[answerKey] || ''
     const isLastQuestion = currentQuestionIndex === allQuestionsList.length - 1
 
     return (
-      <div className="container">
-        <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <Link
-            to="/check-results"
-            style={{
-              padding: '8px 20px',
-              background: '#48bb78',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontWeight: '600',
-              display: 'inline-block',
-              fontSize: '0.9em',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = '#38a169'
-              e.target.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = '#48bb78'
-              e.target.style.transform = 'translateY(0)'
-            }}
-          >
-            🔍 Check Results
-          </Link>
-          <Link
-            to="/login"
-            style={{
-              padding: '8px 20px',
-              background: '#667eea',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontWeight: '600',
-              display: 'inline-block',
-              fontSize: '0.9em',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = '#5568d3'
-              e.target.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = '#667eea'
-              e.target.style.transform = 'translateY(0)'
-            }}
-          >
-            🔐 Admin Login
-          </Link>
-        </div>
-        
-        <header>
-          <h1>SBEAMP</h1>
-          {selectedAssessmentType && (
-            <>
-              <h2 style={{ fontSize: '1.5em', marginTop: '10px', fontWeight: '500' }}>
-                {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
-              </h2>
-              {selectedAssessmentType.description && (
-                <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
-              )}
-            </>
-          )}
+      <div className="app-shell">
+        <div className="app-nav">
           
-          {/* Only show dropdown if there are multiple active assessment types */}
-          {assessmentTypes.length > 1 && (
-            <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
-                Select Assessment Type:
-              </label>
-              <Dropdown
-                value={selectedAssessmentType?.id || ''}
-                onChange={(typeId) => {
-                  const type = assessmentTypes.find(t => t.id === typeId)
-                  if (type) {
-                    console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
-                    // Clear previous questions and state
-                    setCategories([])
-                    setAllQuestionsList([])
-                    setCurrentQuestionIndex(0)
-                    setShowPreview(false)
-                    setShowContactInfo(false)
-                    // Clear previous answers
-                    setFormData(prev => ({
-                      ...prev,
-                      assessment_type_id: type.id,
-                      answers: {} // Clear previous answers when switching types
-                    }))
-                    // Set new assessment type
-                    setSelectedAssessmentType(type)
-                    // Load questions for the selected type only
-                    loadQuestions(type.id)
-                  }
-                }}
-                options={assessmentTypes.map(type => ({
-                  value: type.id,
-                  label: type.name,
-                  icon: type.icon || '📝'
-                }))}
-                placeholder="Select Assessment Type..."
-              />
-            </div>
-          )}
-          
-          <div style={{ 
-            marginTop: '20px', 
-            padding: '15px', 
-            background: 'rgba(255, 255, 255, 0.2)', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <p style={{ color: 'white', fontSize: '1.1em', fontWeight: '600' }}>
-              Question {currentQuestionIndex + 1} of {allQuestionsList.length}
-            </p>
-            <div style={{ 
-              width: '100%', 
-              height: '8px', 
-              background: 'rgba(255, 255, 255, 0.3)', 
-              borderRadius: '4px',
-              marginTop: '10px',
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                width: `${((currentQuestionIndex + 1) / allQuestionsList.length) * 100}%`,
-                height: '100%',
-                background: 'white',
-                transition: 'width 0.3s ease'
-              }} />
-            </div>
+          <div>
+          <div className="app-brand__name">{branding?.appName || 'SBEAMP'}</div>
+         
+          <div className="app-brand">
+            <BrandLogo
+              logoUrl={branding?.logoUrl}
+              appName={branding?.appName}
+              width={branding?.logoWidth ?? 56}
+              height={branding?.logoHeight ?? 56}
+              rounded={12}
+              padding={8}
+              background="rgba(0,0,0,0.04)"
+              foreground="#111827"
+            />
+             </div>
           </div>
-        </header>
+          <div className="app-actions">
+            <Link to="/check-results" className="app-btn">🔍 Check Submission</Link>
+            {/* <Link to="/login" className="app-btn app-btn--primary">🔐 Admin Login</Link> */}
+          </div>
+        </div>
 
-        <form id="assessmentForm">
-          <section className="form-section">
+        <div className="app-main">
+          <div className="app-card">
+            <div className="app-card__header">
+              <div className="app-card__title">
+                📝 {selectedAssessmentType?.name || 'Assessment'}
+              </div>
+              {selectedAssessmentType?.description ? (
+                <SafeDescriptionHtml html={selectedAssessmentType.description} className="app-card__subtitle" />
+              ) : null}
+
+              {assessmentTypes.length > 1 ? (
+                <div className="assessment-type-selector" style={{ marginTop: 14 }}>
+                  <label style={{ display: 'block', marginBottom: 8, fontWeight: 800, color: '#111827' }}>
+                    Select Assessment Type:
+                  </label>
+                  <Dropdown
+                    value={selectedAssessmentType?.id || ''}
+                    onChange={(typeId) => {
+                      const type = assessmentTypes.find(t => t.id === typeId)
+                      if (type) {
+                        setCategories([])
+                        setAllQuestionsList([])
+                        setCurrentQuestionIndex(0)
+                        setShowPreview(false)
+                        setFormData(prev => ({
+                          ...prev,
+                          assessment_type_id: type.id,
+                          answers: {}
+                        }))
+                        setSelectedAssessmentType(type)
+                        loadQuestions(type.id)
+                      }
+                    }}
+                    options={assessmentTypes.map(type => ({
+                      value: type.id,
+                      label: type.name,
+                      icon: type.icon || ''
+                    }))}
+                    placeholder="Select Assessment Type..."
+                  />
+                </div>
+              ) : null}
+
+              <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ fontWeight: 800, color: '#111827' }}>
+                  Question {currentQuestionIndex + 1} of {allQuestionsList.length}
+                </div>
+                <div style={{ flex: 1, height: 8, background: 'rgba(0,0,0,0.10)', borderRadius: 99, overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${((currentQuestionIndex + 1) / allQuestionsList.length) * 100}%`,
+                    height: '100%',
+                    background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="app-card__body">
+              <form id="assessmentForm">
+                <section className="form-section" style={{ padding: 0, borderBottom: 'none' }}>
             {currentQuestion.categoryName && (
-              <h2 style={{ fontSize: '1em', color: '#667eea', marginBottom: '15px' }}>
+              <h2 style={{ fontSize: '1em', color: 'var(--brand-primary)', marginBottom: '15px' }}>
                 Category: {currentQuestion.categoryName}
               </h2>
             )}
@@ -1295,140 +985,103 @@ function Assessment() {
                 className="submit-btn"
                 disabled={currentQuestion.isRequired && !currentAnswer}
               >
-                {isLastQuestion ? '💾 Save & Next →' : '💾 Save & Next →'}
+                {isLastQuestion ? 'Continue to review →' : '💾 Save & Next →'}
               </button>
             </div>
-          </section>
-        </form>
+                </section>
+              </form>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="container">
-      <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-        <Link
-          to="/check-results"
-          style={{
-            padding: '8px 20px',
-            background: '#48bb78',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '6px',
-            fontWeight: '600',
-            display: 'inline-block',
-            fontSize: '0.9em',
-            transition: 'all 0.3s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = '#38a169'
-            e.target.style.transform = 'translateY(-2px)'
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = '#48bb78'
-            e.target.style.transform = 'translateY(0)'
-          }}
-        >
-          🔍 Check Results
-        </Link>
-        <Link
-          to="/login"
-          style={{
-            padding: '8px 20px',
-            background: '#667eea',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '6px',
-            fontWeight: '600',
-            display: 'inline-block',
-            fontSize: '0.9em',
-            transition: 'all 0.3s ease'
-          }}
-          onMouseEnter={(e) => {
-            e.target.style.background = '#5568d3'
-            e.target.style.transform = 'translateY(-2px)'
-          }}
-          onMouseLeave={(e) => {
-            e.target.style.background = '#667eea'
-            e.target.style.transform = 'translateY(0)'
-          }}
-        >
-          🔐 Admin Login
-        </Link>
-      </div>
+    <div className="app-shell">
       
-      <header>
-        <h1>SBEAMP</h1>
-        {selectedAssessmentType ? (
-          <>
-            <h2 style={{ fontSize: '1.5em', marginTop: '10px', fontWeight: '500' }}>
-              {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
-            </h2>
-            {selectedAssessmentType.description && (
-              <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
+      <div className="app-nav">
+        
+        <div className="app-brand">
+          
+          <div>
+          <div className="app-brand__name">{branding?.appName || 'SBEAMP'}</div>
+          <BrandLogo
+            logoUrl={branding?.logoUrl}
+            appName={branding?.appName}
+            width={branding?.logoWidth ?? 56}
+            height={branding?.logoHeight ?? 56}
+            rounded={12}
+            padding={8}
+            background="rgba(0,0,0,0.04)"
+            foreground="#111827"
+          />
+          </div>
+          {/* <div className="app-brand__name">{branding?.appName || 'SBEAMP'}</div> */}
+        </div>
+        <div className="app-actions">
+          <Link to="/check-results" className="app-btn">🔍 Check Submission</Link>
+          {/* <Link to="/login" className="app-btn app-btn--primary">🔐 Admin Login</Link> */}
+        </div>
+      </div>
+
+      <div className="app-main">
+        <div className="app-card">
+          <div className="app-card__header">
+            <div className="app-card__title">
+               {selectedAssessmentType?.name || 'AI Adoption Readiness Assessment'}
+            </div>
+            {selectedAssessmentType?.description ? (
+              <SafeDescriptionHtml html={selectedAssessmentType.description} className="app-card__subtitle" />
+            ) : (
+              <div className="app-card__subtitle">
+                Please complete all sections to help us understand your organization's readiness for AI transformation
+              </div>
             )}
-          </>
-        ) : (
-          <>
-            <h2 style={{ fontSize: '1.5em', marginTop: '10px', fontWeight: '500' }}>
-              AI Adoption Readiness Assessment
-            </h2>
-            <p className="subtitle">
-              Please complete all sections to help us understand your organization's readiness for AI transformation
-            </p>
-          </>
-        )}
-        
-        {/* Only show dropdown if there are multiple active assessment types */}
-        {console.log('🔍 Dropdown check - assessmentTypes.length:', assessmentTypes.length, 'Should show:', assessmentTypes.length > 1) || true}
-        {assessmentTypes.length > 1 && (
-          <div className="assessment-type-selector" style={{ marginTop: '20px', position: 'relative', zIndex: 1000 }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'white' }}>
-              Select Assessment Type:
-            </label>
-            <Dropdown
-              value={selectedAssessmentType?.id || ''}
-              onChange={(typeId) => {
-                const type = assessmentTypes.find(t => t.id === typeId)
-                if (type) {
-                  console.log('🔄 Assessment type changed to:', type.name, 'ID:', type.id)
-                  // Clear previous questions and state
-                  setCategories([])
-                  setAllQuestionsList([])
-                  setCurrentQuestionIndex(0)
-                  setShowPreview(false)
-                  setShowContactInfo(false)
-                  // Clear previous answers
-                  setFormData(prev => ({
-                    ...prev,
-                    assessment_type_id: type.id,
-                    answers: {} // Clear previous answers when switching types
-                  }))
-                  // Set new assessment type
-                  setSelectedAssessmentType(type)
-                  // Load questions for the selected type only
-                  loadQuestions(type.id)
-                }
-              }}
-              options={assessmentTypes.map(type => ({
-                value: type.id,
-                label: type.name,
-                icon: type.icon || '📝'
-              }))}
-              placeholder="Select Assessment Type..."
-            />
+
+            {assessmentTypes.length > 1 ? (
+              <div className="assessment-type-selector" style={{ marginTop: 14 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontWeight: 800, color: '#111827' }}>
+                  Select Assessment Type:
+                </label>
+                <Dropdown
+                  value={selectedAssessmentType?.id || ''}
+                  onChange={(typeId) => {
+                    const type = assessmentTypes.find(t => t.id === typeId)
+                    if (type) {
+                      setCategories([])
+                      setAllQuestionsList([])
+                      setCurrentQuestionIndex(0)
+                      setShowPreview(false)
+                      setFormData(prev => ({
+                        ...prev,
+                        assessment_type_id: type.id,
+                        answers: {}
+                      }))
+                      setSelectedAssessmentType(type)
+                      loadQuestions(type.id)
+                    }
+                  }}
+                  options={assessmentTypes.map(type => ({
+                    value: type.id,
+                    label: type.name,
+                    icon: type.icon || ''
+                  }))}
+                  placeholder="Select Assessment Type..."
+                />
+              </div>
+            ) : null}
+
+            {assessmentTypes.length === 0 && !loading ? (
+              <div style={{ marginTop: 14, padding: 12, background: 'rgba(0,0,0,0.04)', borderRadius: 12 }}>
+                <div style={{ fontWeight: 800, color: '#111827' }}>
+                  ⚠️ No active assessment types available. Please contact administrator.
+                </div>
+              </div>
+            ) : null}
           </div>
-        )}
-        
-        
-        {assessmentTypes.length === 0 && !loading && (
-          <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '8px', textAlign: 'center' }}>
-            <p style={{ color: 'white', fontSize: '1.1em' }}>
-              ⚠️ No active assessment types available. Please contact administrator.
-            </p>
-          </div>
-        )}
-      </header>
+
+          <div className="app-card__body">
 
       {error && (
         <div className="error-message" style={{ margin: '20px', padding: '15px', background: '#fee', border: '1px solid #fcc', borderRadius: '5px' }}>
@@ -1499,56 +1152,6 @@ function Assessment() {
           )
         })}
 
-        {/* Contact Information */}
-        <section className="form-section">
-          <h2>Contact Information</h2>
-          <div className="question-group">
-            <label className="question-label">
-              Your Name <span className="required">*</span>
-            </label>
-            <input
-              type="text"
-              name="contact_name"
-              value={formData.contact_name}
-              onChange={(e) => setFormData(prev => ({ ...prev, contact_name: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="question-group">
-            <label className="question-label">
-              Your Email <span className="required">*</span>
-            </label>
-            <input
-              type="email"
-              name="contact_email"
-              value={formData.contact_email}
-              onChange={(e) => setFormData(prev => ({ ...prev, contact_email: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="question-group">
-            <label className="question-label">
-              Company Name <span className="required">*</span>
-            </label>
-            <input
-              type="text"
-              name="company_name"
-              value={formData.company_name}
-              onChange={(e) => setFormData(prev => ({ ...prev, company_name: e.target.value }))}
-              required
-            />
-          </div>
-          <div className="question-group">
-            <label className="question-label">Your Title/Role</label>
-            <input
-              type="text"
-              name="contact_title"
-              value={formData.contact_title}
-              onChange={(e) => setFormData(prev => ({ ...prev, contact_title: e.target.value }))}
-            />
-          </div>
-        </section>
-
         <div className="form-actions">
           <button type="submit" className="submit-btn" disabled={submitting || loading}>
             {submitting ? 'Submitting...' : 'Submit Assessment'}
@@ -1558,6 +1161,9 @@ function Assessment() {
           </button>
         </div>
       </form>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

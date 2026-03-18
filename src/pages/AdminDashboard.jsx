@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../contexts/BrandingContext'
 import { adminAPI } from '../services/api'
 import CategoryModal from '../components/admin/CategoryModal'
 import QuestionModal from '../components/admin/QuestionModal'
@@ -16,6 +17,7 @@ import '../components/admin/AdminDashboard.css'
 function AdminDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { config: branding } = useBranding()
   const [activeTab, setActiveTab] = useState('form-builder')
   const [formBuilderTab, setFormBuilderTab] = useState('assessment-type') // 'assessment-type', 'category', 'question'
   const [stats, setStats] = useState(null)
@@ -360,12 +362,10 @@ function AdminDashboard() {
     
     if (assessmentSearch) {
       const searchLower = assessmentSearch.toLowerCase()
-      filtered = filtered.filter(a => 
-        a.user_name?.toLowerCase().includes(searchLower) ||
-        a.user_email?.toLowerCase().includes(searchLower) ||
-        a.contact_name?.toLowerCase().includes(searchLower) ||
-        a.contact_email?.toLowerCase().includes(searchLower) ||
-        a.company_name?.toLowerCase().includes(searchLower)
+      filtered = filtered.filter(a =>
+        String(a.id ?? '').toLowerCase().includes(searchLower) ||
+        String(a.submittedAt || a.submitted_at || '').toLowerCase().includes(searchLower) ||
+        String(a.status || '').toLowerCase().includes(searchLower)
       )
     }
     
@@ -530,13 +530,9 @@ function AdminDashboard() {
           const detailedResponse = await adminAPI.getAssessmentById(assessment.id, 'detailed')
           const detailedAssessment = detailedResponse.assessment || detailedResponse
 
-          // Build the assessment row with contact info
+          // Build the assessment row
           const assessmentRow = {
             'Assessment ID': assessment.id,
-            'Contact Name': assessment.contactName || assessment.user_name || assessment.contact_name || 'Anonymous',
-            'Contact Email': assessment.contactEmail || assessment.user_email || assessment.contact_email || 'N/A',
-            'Company Name': assessment.companyName || assessment.company_name || 'N/A',
-            'Contact Title': assessment.contactTitle || assessment.contact_title || 'N/A',
             'Submitted At': formatDate(assessment.submittedAt || assessment.submitted_at),
             'Active Date': formatDate(assessment.activeDate || assessment.active_date),
             'Expiry Date': formatDate(assessment.expiryDate || assessment.expiry_date),
@@ -659,9 +655,6 @@ function AdminDashboard() {
           // Add basic row even if detailed fetch fails
           exportData.push({
             'Assessment ID': assessment.id,
-            'Contact Name': assessment.contactName || assessment.user_name || assessment.contact_name || 'Anonymous',
-            'Contact Email': assessment.contactEmail || assessment.user_email || assessment.contact_email || 'N/A',
-            'Company Name': assessment.companyName || assessment.company_name || 'N/A',
             'Error': 'Failed to load detailed data'
           })
         }
@@ -779,7 +772,7 @@ function AdminDashboard() {
       
       <div className="admin-header">
         <div className="admin-header-info">
-          <h1>📊 SBEAMP Admin Dashboard</h1>
+          {/* <h1>{branding?.appName}</h1> */}
           <p>Welcome back, <strong>{user?.name || 'Admin'}</strong></p>
           <span className="admin-badge">
             {user?.role === 'admin-viewer' ? '👁️ Admin Viewer' : 'Administrator'}
@@ -1180,7 +1173,7 @@ function AdminDashboard() {
                                   boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                                 }}>
                                   <div style={{ fontSize: '1.5em', marginBottom: '5px' }}>
-                                    {type.icon || '📝'}
+                                    {type.icon ? type.icon : ''}
                                   </div>
                                   <div style={{ fontWeight: '600', marginBottom: '5px' }}>
                                     {type.name}
@@ -1664,7 +1657,7 @@ function AdminDashboard() {
                       <span className="search-icon">🔍</span>
                       <input
                         type="text"
-                        placeholder="Search by user name, email, or company..."
+                        placeholder="Search by ID, status, or submitted date..."
                         value={assessmentSearch}
                         onChange={(e) => setAssessmentSearch(e.target.value)}
                         className="search-input"
@@ -1679,7 +1672,7 @@ function AdminDashboard() {
                       <option value="all">All Assessment Types</option>
                       {assessmentTypes.map(type => (
                         <option key={type.id} value={type.id}>
-                          {type.icon || '📝'} {type.name}
+                          {type.icon ? `${type.icon} ` : ''}{type.name}
                         </option>
                       ))}
                     </select>
@@ -1729,9 +1722,7 @@ function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>ID</th>
-                            <th>Contact Name</th>
-                            <th>Email</th>
-                            <th>Company</th>
+                            <th>Assessment Type</th>
                             <th>Active Date</th>
                             <th>Expiry Date</th>
                             <th>Status</th>
@@ -1743,11 +1734,18 @@ function AdminDashboard() {
                           {currentAssessments.map((assessment) => (
                             <tr key={assessment.id}>
                               <td className="id-cell">#{assessment.id}</td>
-                              <td className="name-cell">
-                                <strong>{assessment.contactName || assessment.user_name || assessment.contact_name || 'Anonymous'}</strong>
+                              <td>
+                                {(() => {
+                                  const typeId = assessment.assessment_type_id ?? assessment.assessmentTypeId ?? assessment.assessment_type?.id
+                                  const t = typeId ? assessmentTypes.find(x => Number(x.id) === Number(typeId)) : null
+                                  if (!t) return <span className="na-text">—</span>
+                                  return (
+                                    <span style={{ fontWeight: 700 }}>
+                                      {t.icon ? `${t.icon} ` : ''}{t.name}
+                                    </span>
+                                  )
+                                })()}
                               </td>
-                              <td className="email-cell">{assessment.contactEmail || assessment.user_email || assessment.contact_email || <span className="na-text">N/A</span>}</td>
-                              <td>{assessment.companyName || assessment.company_name || <span className="na-text">N/A</span>}</td>
                               <td className="date-cell">{formatDate(assessment.activeDate)}</td>
                               <td className="date-cell">{formatDate(assessment.expiryDate)}</td>
                               <td>
@@ -1999,7 +1997,7 @@ function AdminDashboard() {
                           <tr key={type.id}>
                             <td className="id-cell">#{type.id}</td>
                             <td className="name-cell">
-                              <strong>{type.icon || '📝'} {type.name}</strong>
+                              <strong>{type.icon ? `${type.icon} ` : ''}{type.name}</strong>
                             </td>
                             <td><code>{type.slug}</code></td>
                             <td>{type.description || <span className="na-text">N/A</span>}</td>
@@ -2508,46 +2506,29 @@ function AdminDashboard() {
             </div>
             <div className="modal-body">
               <div className="assessment-details">
-                <div className="detail-section highlight">
-                  <h3>👤 Contact Information</h3>
-                  <div className="info-grid">
-                    <div className="info-item">
-                      <strong>Name:</strong> {selectedAssessment.user_name || selectedAssessment.contact_name || 'N/A'}
+                {(selectedAssessment.activeDate || selectedAssessment.active_date || selectedAssessment.expiryDate || selectedAssessment.expiry_date || !selectedAssessment.user_id) ? (
+                  <div className="detail-section highlight">
+                    <h3>📌 Submission Details</h3>
+                    <div className="info-grid">
+                      {(selectedAssessment.activeDate || selectedAssessment.active_date) && (
+                        <div className="info-item">
+                          <strong>Active Date:</strong> {formatDate(selectedAssessment.activeDate || selectedAssessment.active_date)}
+                        </div>
+                      )}
+                      {(selectedAssessment.expiryDate || selectedAssessment.expiry_date) && (
+                        <div className="info-item">
+                          <strong>Expiry Date:</strong> {formatDate(selectedAssessment.expiryDate || selectedAssessment.expiry_date)}
+                        </div>
+                      )}
+                     
                     </div>
-                    <div className="info-item">
-                      <strong>Email:</strong> {selectedAssessment.user_email || selectedAssessment.contact_email || 'N/A'}
-                    </div>
-                    <div className="info-item">
-                      <strong>Company:</strong> {selectedAssessment.company_name || 'N/A'}
-                    </div>
-                    <div className="info-item">
-                      <strong>Title:</strong> {selectedAssessment.contact_title || 'N/A'}
-                    </div>
-                    {(selectedAssessment.activeDate || selectedAssessment.active_date) && (
-                      <div className="info-item">
-                        <strong>Active Date:</strong> {formatDate(selectedAssessment.activeDate || selectedAssessment.active_date)}
-                      </div>
-                    )}
-                    {(selectedAssessment.expiryDate || selectedAssessment.expiry_date) && (
-                      <div className="info-item">
-                        <strong>Expiry Date:</strong> {formatDate(selectedAssessment.expiryDate || selectedAssessment.expiry_date)}
-                      </div>
-                    )}
-                    {!selectedAssessment.user_id && (
-                      <div className="info-item full-width">
-                        <span className="na-text">📝 Anonymous Submission</span>
-                      </div>
-                    )}
                   </div>
-                </div>
+                ) : null}
 
                 {selectedAssessment.summary && (
                   <div className="detail-section highlight">
                     <h3>📊 Assessment Summary</h3>
                     <div className="info-grid">
-                      <div className="info-item">
-                        <strong>Overall Score:</strong> {selectedAssessment.summary.overallScore || 0}%
-                      </div>
                       <div className="info-item">
                         <strong>Readiness Level:</strong> 
                         <span className={`status-badge ${selectedAssessment.summary.readinessLevel?.toLowerCase().replace(' ', '-')}`}>

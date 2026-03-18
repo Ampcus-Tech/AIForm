@@ -319,60 +319,7 @@ function AssessmentDetailsModal({ assessment, allQuestionsMap, questions, onClos
         </div>
         <div className="modal-body" style={{ padding: '30px' }}>
           <div className="assessment-details">
-            {/* Contact Information Section */}
-            <div className="detail-section" style={{
-              padding: '24px',
-              background: '#f8f9ff',
-              borderRadius: '12px',
-              marginBottom: '24px',
-              border: '1px solid #e0e7ff'
-            }}>
-              <h3 style={{ 
-                margin: '0 0 20px 0', 
-                fontSize: '1.2em', 
-                fontWeight: '600',
-                color: '#667eea',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                👤 Contact Information
-              </h3>
-              <div className="info-grid" style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '16px'
-              }}>
-                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
-                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Name:</strong>
-                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.user_name || assessment.contact_name || 'N/A'}</span>
-                </div>
-                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
-                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Email:</strong>
-                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.user_email || assessment.contact_email || 'N/A'}</span>
-                </div>
-                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
-                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Company:</strong>
-                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.company_name || 'N/A'}</span>
-                </div>
-                <div className="info-item" style={{ padding: '12px', background: 'white', borderRadius: '8px' }}>
-                  <strong style={{ color: '#666', display: 'block', marginBottom: '4px', fontSize: '0.9em' }}>Title:</strong>
-                  <span style={{ color: '#333', fontSize: '1em' }}>{assessment.contact_title || 'N/A'}</span>
-                </div>
-              </div>
-              {!assessment.user_id && (
-                <div className="info-item full-width" style={{ 
-                  marginTop: '16px', 
-                  padding: '12px', 
-                  background: '#fff3cd', 
-                  borderRadius: '8px', 
-                  border: '1px solid #ffc107',
-                  textAlign: 'center'
-                }}>
-                  <span style={{ color: '#856404', fontWeight: '500', fontSize: '0.95em' }}>📝 Anonymous Submission</span>
-                </div>
-              )}
-            </div>
+           
 
             {/* Assessment Answers Section - Grouped by Category (assessment-type order, not alphabetical) */}
             {Object.keys(answersByCategory).length > 0 ? (

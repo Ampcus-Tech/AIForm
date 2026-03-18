@@ -2,10 +2,13 @@ import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { assessmentAPI } from '../services/api'
 import API_BASE_URL from '../config/api.js'
+import { useBranding } from '../contexts/BrandingContext'
+import BrandLogo from '../components/common/BrandLogo'
 import '../styles.css'
 
 function CheckResults() {
   const navigate = useNavigate()
+  const { config: branding } = useBranding()
   const [searchType, setSearchType] = useState('id') // 'id' or 'email'
   const [assessmentId, setAssessmentId] = useState('')
   const [email, setEmail] = useState('')
@@ -89,7 +92,7 @@ function CheckResults() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
       padding: '20px'
     }}>
       <div style={{
@@ -110,11 +113,26 @@ function CheckResults() {
           borderBottom: '2px solid #e0e0e0'
         }}>
           <div>
+            {/* <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <BrandLogo
+                logoUrl={branding?.logoUrl}
+                appName={branding?.appName}
+                width={branding?.logoWidth ?? 56}
+                height={branding?.logoHeight ?? 56}
+                rounded={12}
+                padding={6}
+                background="rgba(0,0,0,0.04)"
+                foreground="#111827"
+              />
+              <div style={{ fontWeight: '700', letterSpacing: '1px', color: '#333' }}>
+                {branding?.appName || 'SBEAMP'}
+              </div>
+            </div> */}
             <h1 style={{
               fontSize: '2.5em',
               margin: '0 0 10px 0',
               color: '#333',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              background: 'linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-secondary) 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent'
             }}>
@@ -130,9 +148,9 @@ function CheckResults() {
               padding: '12px 24px',
               fontSize: '1em',
               fontWeight: '600',
-              color: '#667eea',
+              color: 'var(--brand-primary)',
               background: 'white',
-              border: '2px solid #667eea',
+              border: '2px solid var(--brand-primary)',
               borderRadius: '10px',
               textDecoration: 'none',
               transition: 'all 0.3s ease'
@@ -164,13 +182,13 @@ function CheckResults() {
             <label style={{
               flex: 1,
               padding: '12px',
-              background: searchType === 'id' ? '#667eea' : 'white',
-              color: searchType === 'id' ? 'white' : '#667eea',
+              background: searchType === 'id' ? 'var(--brand-primary)' : 'white',
+              color: searchType === 'id' ? 'white' : 'var(--brand-primary)',
               borderRadius: '8px',
               textAlign: 'center',
               cursor: 'pointer',
               fontWeight: '600',
-              border: '2px solid #667eea',
+              border: '2px solid var(--brand-primary)',
               transition: 'all 0.3s ease'
             }}>
               <input
@@ -186,13 +204,13 @@ function CheckResults() {
             <label style={{
               flex: 1,
               padding: '12px',
-              background: searchType === 'email' ? '#667eea' : 'white',
-              color: searchType === 'email' ? 'white' : '#667eea',
+              background: searchType === 'email' ? 'var(--brand-primary)' : 'white',
+              color: searchType === 'email' ? 'white' : 'var(--brand-primary)',
               borderRadius: '8px',
               textAlign: 'center',
               cursor: 'pointer',
               fontWeight: '600',
-              border: '2px solid #667eea',
+              border: '2px solid var(--brand-primary)',
               transition: 'all 0.3s ease'
             }}>
               <input
@@ -447,24 +465,6 @@ function CheckResults() {
                   gap: '15px',
                   marginTop: '15px'
                 }}>
-                  <div>
-                    <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Contact Name</div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>
-                      {assessment.contact_name || assessment.user_name || 'N/A'}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Email</div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>
-                      {assessment.contact_email || assessment.user_email || 'N/A'}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: '#667eea', fontSize: '0.9em', marginBottom: '5px' }}>Company</div>
-                    <div style={{ fontWeight: '600', color: '#333' }}>
-                      {assessment.company_name || 'N/A'}
-                    </div>
-                  </div>
                 </div>
               </div>
             ))}

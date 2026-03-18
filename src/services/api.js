@@ -69,6 +69,13 @@ export const authAPI = {
   },
 }
 
+// Public Config API
+export const configAPI = {
+  get: async () => {
+    return apiRequest('/config', { method: 'GET' })
+  },
+}
+
 // Assessment API
 export const assessmentAPI = {
   submit: async (formData) => {
@@ -160,6 +167,17 @@ export const adminAPI = {
   getAllAssessments: async () => {
     return apiRequest('/admin/assessments', {
       method: 'GET',
+    })
+  },
+
+  // App Settings (branding)
+  getAppSettings: async () => {
+    return apiRequest('/admin/app-settings', { method: 'GET' })
+  },
+  updateAppSettings: async (data) => {
+    return apiRequest('/admin/app-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     })
   },
 

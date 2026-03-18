@@ -1,6 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { SafeDescriptionHtml } from '../common/RichTextEditor'
+import { useBranding } from '../../contexts/BrandingContext'
+import BrandLogo from '../common/BrandLogo'
 
 /**
  * Preview page component showing all answers before final submission
@@ -12,8 +14,9 @@ function AssessmentPreview({
   onEditQuestion,
   onBackToLast,
   onSubmit,
-  submitting 
+  submitting,
 }) {
+  const { config: branding } = useBranding()
   const getChildKey = (q) => q?.questionCode || q?.question_code || q?.code || (q?.id ? `q_${q.id}` : undefined)
 
   const shouldShowChildren = (question, answerValue) => {
@@ -113,44 +116,47 @@ function AssessmentPreview({
   }
 
   return (
-    <div className="container">
-      <div style={{ padding: '15px 20px', textAlign: 'right', background: '#f8f9fa', borderBottom: '1px solid #e0e0e0' }}>
-        <Link
-          to="/login"
-          style={{
-            padding: '8px 20px',
-            background: '#667eea',
-            color: 'white',
-            textDecoration: 'none',
-            borderRadius: '6px',
-            fontWeight: '600',
-            display: 'inline-block',
-            fontSize: '0.9em',
-          }}
-        >
-          🔐 Admin Login
-        </Link>
+    <div className="app-shell">
+      <div className="app-nav">
+        <div className="app-brand">
+          <BrandLogo
+            logoUrl={branding?.logoUrl}
+            appName={branding?.appName}
+            width={branding?.logoWidth ?? 108}
+            height={branding?.logoHeight ?? 108}
+            rounded={12}
+            padding={4}
+            background="rgba(0,0,0,0.04)"
+            foreground="#111827"
+          />
+          <div className="app-brand__name">{branding?.appName || 'SBEAMP'}</div>
+        </div>
+        <div className="app-actions">
+          <Link to="/check-results" className="app-btn">
+            🔍 Check Submission
+          </Link>
+          {/* <Link to="/login" className="app-btn app-btn--primary">
+            🔐 Admin Login
+          </Link> */}
+        </div>
       </div>
-      
-      <header>
-        <h1>SBEAMP</h1>
-        {selectedAssessmentType && (
-          <>
-            <h2 style={{ fontSize: '1.5em', marginTop: '10px', fontWeight: '500' }}>
-              {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
-            </h2>
-            {selectedAssessmentType.description && (
-              <SafeDescriptionHtml html={selectedAssessmentType.description} className="subtitle" />
-            )}
-          </>
-        )}
-      </header>
 
-      <div className="form-section" style={{ marginTop: '20px' }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>📋 Review Your Answers</h2>
-        <p style={{ textAlign: 'center', color: '#666', marginBottom: '30px' }}>
-          Please review all your answers before final submission. You can go back to edit any question.
-        </p>
+      <div className="app-main">
+        <div className="app-card">
+          <div className="app-card__header">
+            <div className="app-card__title">
+              📋 Review Your Answers
+            </div>
+            {selectedAssessmentType?.name ? (
+              <div className="app-card__subtitle">
+                {selectedAssessmentType.icon || '📝'} {selectedAssessmentType.name}
+              </div>
+            ) : null}
+          </div>
+          <div className="app-card__body">
+            <p style={{ color: '#4b5563', marginBottom: '18px' }}>
+              Please review all your answers before final submission. You can go back to edit any question.
+            </p>
 
         {allQuestionsList.map((question, index) =>
           renderQuestionTree(question, {
@@ -160,32 +166,6 @@ function AssessmentPreview({
             topIndex: index
           })
         )}
-
-        {/* Contact Information Preview */}
-        <div className="question-group" style={{ 
-          marginTop: '30px',
-          marginBottom: '25px', 
-          padding: '20px', 
-          background: '#f8f9ff', 
-          borderRadius: '8px',
-          border: '1px solid #e0e7ff'
-        }}>
-          <h3 style={{ color: '#667eea', marginBottom: '15px' }}>Contact Information</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-            <div>
-              <strong>Name:</strong> {formData.contact_name || 'Not provided'}
-            </div>
-            <div>
-              <strong>Email:</strong> {formData.contact_email || 'Not provided'}
-            </div>
-            <div>
-              <strong>Company:</strong> {formData.company_name || 'Not provided'}
-            </div>
-            <div>
-              <strong>Title:</strong> {formData.contact_title || 'Not provided'}
-            </div>
-          </div>
-        </div>
 
         <div className="form-actions" style={{ marginTop: '30px' }}>
           <button
@@ -204,6 +184,8 @@ function AssessmentPreview({
           >
             {submitting ? 'Submitting...' : '✅ Submit Assessment'}
           </button>
+        </div>
+          </div>
         </div>
       </div>
     </div>

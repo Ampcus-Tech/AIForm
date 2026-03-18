@@ -1,19 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useBranding } from '../contexts/BrandingContext'
 import { adminAPI } from '../services/api'
 import AssessmentTypeModal from './admin/AssessmentTypeModal'
 import UserModal from './admin/UserModal'
 import CategoryModal from './admin/CategoryModal'
 import QuestionModal from './admin/QuestionModal'
 import AssessmentDetailsModal from './admin/AssessmentDetailsModal'
+import AppSettingsModal from './admin/AppSettingsModal'
 import { SafeDescriptionHtml } from './common/RichTextEditor'
+import BrandLogo from './common/BrandLogo'
 import '../styles.css'
 import './AdminDashboard.css'
 
 function AdminDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { config: branding, refresh: refreshBranding } = useBranding()
   const [activeTab, setActiveTab] = useState('stats') // Default to Statistics
   const [stats, setStats] = useState(null)
   const [users, setUsers] = useState([])
@@ -23,6 +27,7 @@ function AdminDashboard() {
   const [selectedAssessment, setSelectedAssessment] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showAppSettings, setShowAppSettings] = useState(false)
   
   // Questions and Categories states
   const [categories, setCategories] = useState([])
@@ -658,10 +663,6 @@ function AdminDashboard() {
           // Build assessment row with fixed columns first
           const assessmentRow = {
             'Assessment ID': assessment.id,
-            'Contact Name': assessment.user_name || assessment.contact_name || 'Anonymous',
-            'Contact Email': assessment.user_email || assessment.contact_email || 'N/A',
-            'Company Name': assessment.company_name || 'N/A',
-            'Contact Title': assessment.contact_title || 'N/A',
             'Submitted At': formatDate(assessment.submitted_at)
           }
 
@@ -857,9 +858,6 @@ function AdminDashboard() {
           // Add basic row even if detailed fetch fails
           exportData.push({
             'Assessment ID': assessment.id,
-            'Contact Name': assessment.contact_name || assessment.user_name || 'Anonymous',
-            'Contact Email': assessment.contact_email || assessment.user_email || 'N/A',
-            'Company Name': assessment.company_name || 'N/A',
             'Error': `Failed to load detailed data: ${err.message || 'Unknown error'}`
           })
         }
@@ -878,7 +876,7 @@ function AdminDashboard() {
       })
       
       // Sort headers: fixed columns first, then question columns in the SAME ORDER as questions were processed
-      const fixedHeaders = ['Assessment ID', 'Contact Name', 'Contact Email', 'Company Name', 'Contact Title', 'Submitted At']
+      const fixedHeaders = ['Assessment ID', 'Submitted At']
       
       // Build question headers in the exact order questions were processed
       // Use same user-friendly format as when building rows
@@ -1061,11 +1059,31 @@ function AdminDashboard() {
     <div className="admin-container">
       <div className="admin-header">
         <div className="admin-header-info">
-          <h1>📊 SBEAMP Admin Dashboard</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <BrandLogo
+              logoUrl={branding?.logoUrl}
+              appName={branding?.appName}
+              width={branding?.logoWidth ?? 54}
+              height={branding?.logoHeight ?? 54}
+              rounded={12}
+              padding={6}
+              background="rgba(0,0,0,0.04)"
+              foreground="#111827"
+            />
+            {/* <span>{branding?.appName || 'SBEAMP'}</span> */}
+          </h1>
           <p>Welcome back, <strong>{user?.name}</strong></p>
           <span className="admin-badge">Administrator</span>
         </div>
         <div className="admin-header-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowAppSettings(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            ⚙️ App Settings
+          </button>
           <Link
             to="/"
             className="btn-secondary"
@@ -1078,6 +1096,15 @@ function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {showAppSettings ? (
+        <AppSettingsModal
+          onClose={() => setShowAppSettings(false)}
+          onSaved={async () => {
+            await refreshBranding()
+          }}
+        />
+      ) : null}
 
       <div className="admin-tabs">
         <button
@@ -1777,7 +1804,7 @@ function AdminDashboard() {
                       <option value="all">All Assessment Types</option>
                       {assessmentTypes.map(type => (
                         <option key={type.id} value={type.id}>
-                          {type.icon || '📝'} {type.name}
+                          {type.icon ? `${type.icon} ` : ''}{type.name}
                         </option>
                       ))}
                     </select>
@@ -1826,9 +1853,7 @@ function AdminDashboard() {
                         <thead>
                           <tr>
                             <th>ID</th>
-                            <th>User Name</th>
-                            <th>Email</th>
-                            <th>Company</th>
+                            <th>Assessment Type</th>
                             <th>Submitted At</th>
                             <th>Actions</th>
                           </tr>
@@ -1837,11 +1862,25 @@ function AdminDashboard() {
                           {currentAssessments.map((assessment) => (
                             <tr key={assessment.id}>
                               <td className="id-cell">#{assessment.id}</td>
-                              <td className="name-cell">
-                                <strong>{assessment.user_name || assessment.contact_name || 'Anonymous'}</strong>
+                              <td>
+                                {(() => {
+                                  if (assessment.assessment_type_name) {
+                                    return (
+                                      <span style={{ fontWeight: 700 }}>
+                                        {assessment.assessment_type_icon ? `${assessment.assessment_type_icon} ` : ''}{assessment.assessment_type_name}
+                                      </span>
+                                    )
+                                  }
+                                  const typeId = assessment.assessment_type_id ?? assessment.assessmentTypeId ?? assessment.assessment_type?.id
+                                  const t = typeId ? assessmentTypes.find(x => Number(x.id) === Number(typeId)) : null
+                                  if (!t) return <span className="na-text">—</span>
+                                  return (
+                                    <span style={{ fontWeight: 700 }}>
+                                      {t.icon ? `${t.icon} ` : ''}{t.name}
+                                    </span>
+                                  )
+                                })()}
                               </td>
-                              <td className="email-cell">{assessment.user_email || assessment.contact_email || <span className="na-text">N/A</span>}</td>
-                              <td>{assessment.company_name || <span className="na-text">N/A</span>}</td>
                               <td className="date-cell">{formatDate(assessment.submitted_at)}</td>
                               <td>
                                 <button
@@ -3174,7 +3213,7 @@ function AdminDashboard() {
                             >
                               <td style={{ padding: '16px', fontWeight: '600', color: '#667eea' }}>#{type.id}</td>
                               <td style={{ padding: '16px', textAlign: 'center', fontSize: '1.8em' }}>
-                                {type.icon || '📝'}
+                                {type.icon ? type.icon : ''}
                               </td>
                               <td style={{ padding: '16px' }}>
                                 <div>
@@ -3445,7 +3484,7 @@ function AdminDashboard() {
                       <strong>Name:</strong> {viewingAssessmentType.name}
                     </div>
                     <div className="info-item">
-                      <strong>Icon:</strong> {viewingAssessmentType.icon || '📝'}
+                      <strong>Icon:</strong> {viewingAssessmentType.icon ? viewingAssessmentType.icon : '—'}
                     </div>
                     <div className="info-item">
                       <strong>Slug:</strong> {viewingAssessmentType.slug || 'N/A'}
