@@ -43,21 +43,21 @@ function Login() {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
-            <BrandLogo
+          {/* <div style={{ display: 'flex', gap: '10px', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}> */}
+            {/* <BrandLogo
               logoUrl={branding?.logoUrl}
               appName={branding?.appName}
-              width={branding?.logoWidth ?? 34}
+              width={"150px"}
               height={branding?.logoHeight ?? 34}
               rounded={10}
               padding={6}
               background="rgba(0,0,0,0.04)"
               foreground="var(--brand-primary)"
-            />
-            <div style={{ fontSize: '0.9em', color: 'var(--brand-primary)', fontWeight: '600', letterSpacing: '2px' }}>
+            /> */}
+            {/* <div style={{ fontSize: '0.9em', color: 'var(--brand-primary)', fontWeight: '600', letterSpacing: '2px' }}>
               {branding?.appName || 'SBEAMP'}
-            </div>
-          </div>
+            </div> */}
+          {/* </div> */}
           <h1>Admin Login</h1>
           <p>Sign in to access the admin dashboard</p>
         </div>

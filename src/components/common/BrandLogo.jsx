@@ -30,8 +30,8 @@ export default function BrandLogo({
   const initials = useMemo(() => initialsFromName(appName), [appName])
   const wRaw = width ?? size
   const hRaw = height ?? size
-  const w =500//= typeof wRaw === 'number' && wRaw > 0 ? wRaw : size
-  const h =100// typeof hRaw === 'number' && hRaw > 0 ? hRaw : size
+  const w =800//= typeof wRaw === 'number' && wRaw > 0 ? wRaw : size
+  const h =150// typeof hRaw === 'number' && hRaw > 0 ? hRaw : size
   const resolvedLogoUrl = useMemo(() => {
     if (!logoUrl) return null
     if (typeof logoUrl !== 'string') return logoUrl
